@@ -1,0 +1,44 @@
+server:
+  port: ${SERVER_PORT:8091}
+
+spring:
+  application:
+    name: location-ingest
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9094}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      # 위치는 한 점 잃어도 3초 뒤에 다음 점이 온다. 그래서 처리량 쪽으로 몰아준다.
+      acks: "1"
+      properties:
+        linger.ms: 20
+        batch.size: 65536
+        compression.type: lz4
+    template:
+      observation-enabled: true
+
+delivery:
+  ingest:
+    topic: rider.location
+    # 좌표 이동거리가 이보다 작으면 발행을 건너뛴다(정차 중인 라이더가 트래픽을 다 먹는 걸 막음)
+    min-move-meters: 15
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, metrics, prometheus
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+# OTel 자바 에이전트가 MDC 에 trace_id/span_id 를 꽂아준다.
+# 로키에서 로그 보다가 바로 템포 트레이스로 뛰려면 이 두 개가 로그에 있어야 한다.
+logging:
+  pattern:
+    level: "%5p [${spring.application.name},%X{trace_id:-},%X{span_id:-}]"

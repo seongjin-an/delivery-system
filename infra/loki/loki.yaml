@@ -1,0 +1,47 @@
+# 단일 프로세스 + 파일시스템. 로컬 실습용이라 이 이상 복잡하게 갈 이유가 없다.
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9096
+  log_level: warn
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    - from: 2024-01-01
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+limits_config:
+  # OTLP 로 들어오는 trace_id 같은 속성은 라벨이 아니라 structured metadata 로 붙는다.
+  # 이게 꺼져 있으면 컬렉터가 보내는 로그를 로키가 거부한다 — 처음에 여기서 막혔다.
+  allow_structured_metadata: true
+  volume_enabled: true
+  ingestion_rate_mb: 32
+  ingestion_burst_size_mb: 64
+  reject_old_samples: false
+
+compactor:
+  working_directory: /loki/compactor
+  retention_enabled: true
+  delete_request_store: filesystem
+
+table_manager:
+  retention_deletes_enabled: true
+  retention_period: 72h

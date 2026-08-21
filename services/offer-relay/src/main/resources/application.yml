@@ -1,0 +1,59 @@
+server:
+  port: ${SERVER_PORT:8094}
+
+spring:
+  application:
+    name: offer-relay
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6380}
+  rabbitmq:
+    host: ${RABBIT_HOST:localhost}
+    port: ${RABBIT_PORT:5672}
+    username: ${RABBIT_USERNAME:dev_user}
+    password: ${RABBIT_PASSWORD:dev_password}
+    template:
+      observation-enabled: true
+    listener:
+      simple:
+        acknowledge-mode: manual
+        # 만료 제안은 재제안까지 붙어 있는 무거운 작업이라 조금씩 가져온다.
+        prefetch: 20
+        observation-enabled: true
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 500ms
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9094}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+    template:
+      observation-enabled: true
+
+delivery:
+  relay:
+    # 이 횟수까지 재제안했는데 아무도 안 받으면 dispatch.failed 로 넘긴다.
+    max-attempts: 5
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, metrics, prometheus
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+# OTel 자바 에이전트가 MDC 에 trace_id/span_id 를 꽂아준다.
+# 로키에서 로그 보다가 바로 템포 트레이스로 뛰려면 이 두 개가 로그에 있어야 한다.
+logging:
+  pattern:
+    level: "%5p [${spring.application.name},%X{trace_id:-},%X{span_id:-}]"

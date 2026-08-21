@@ -1,0 +1,99 @@
+# 앱은 OTLP 한 곳(:4317)으로만 쏜다. 어디로 보낼지는 여기서 정한다.
+# 앱 코드에서 로키/템포 주소를 지우는 게 수집기를 두는 첫 번째 이유.
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 5s
+    send_batch_size: 1024
+
+  memory_limiter:
+    check_interval: 2s
+    limit_percentage: 75
+    spike_limit_percentage: 20
+
+  resource:
+    attributes:
+      - key: deployment.environment
+        value: local
+        action: upsert
+
+  # 프로메테우스가 5초마다 긁는 /actuator/prometheus 까지 트레이스로 잡힌다.
+  # 앱 8개 × 12회/분이면 분당 100개 — 정작 보고 싶은 배차 트레이스가 이것들에 묻힌다.
+  # 헬스체크도 같이 버린다.
+  filter/drop-noise:
+    error_mode: ignore
+    traces:
+      span:
+        - 'attributes["url.path"] != nil and IsMatch(attributes["url.path"], "^/actuator")'
+        - 'attributes["http.route"] != nil and IsMatch(attributes["http.route"], "^/actuator")'
+
+  # 느린 배차만 통째로 남기고 나머지는 10%만 저장한다.
+  # 부하를 걸면 트레이스가 초당 수천 개씩 쏟아지는데, 전부 저장하면 템포가 먼저 죽는다.
+  tail_sampling:
+    decision_wait: 5s
+    num_traces: 50000
+    policies:
+      - name: errors-always
+        type: status_code
+        status_code:
+          status_codes: [ ERROR ]
+      - name: slow-always
+        type: latency
+        latency:
+          threshold_ms: 500
+      - name: sample-rest
+        type: probabilistic
+        probabilistic:
+          sampling_percentage: 10
+
+exporters:
+  otlp/tempo:
+    endpoint: tempo:4317
+    tls:
+      insecure: true
+
+  # 로키 3.x 는 OTLP 를 그대로 받는다 (예전 loki exporter 는 폐기됨)
+  otlphttp/loki:
+    endpoint: http://loki:3100/otlp
+    tls:
+      insecure: true
+
+  # 컬렉터가 받은 메트릭은 여기로 노출하고 프로메테우스가 긁어간다
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    send_timestamps: true
+    resource_to_telemetry_conversion:
+      enabled: true
+
+  debug:
+    verbosity: basic
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [ health_check ]
+  pipelines:
+    traces:
+      receivers: [ otlp ]
+      processors: [ memory_limiter, filter/drop-noise, tail_sampling, resource, batch ]
+      exporters: [ otlp/tempo ]
+    logs:
+      receivers: [ otlp ]
+      processors: [ memory_limiter, resource, batch ]
+      exporters: [ otlphttp/loki ]
+    metrics:
+      receivers: [ otlp ]
+      processors: [ memory_limiter, resource, batch ]
+      exporters: [ prometheus ]
+  telemetry:
+    logs:
+      level: info

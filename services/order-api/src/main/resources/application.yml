@@ -1,0 +1,55 @@
+server:
+  port: ${SERVER_PORT:8090}
+
+spring:
+  application:
+    name: order-api
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:33306/delivery?serverTimezone=UTC&characterEncoding=UTF-8}
+    username: ${DB_USERNAME:dev_user}
+    password: ${DB_PASSWORD:dev_password}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6380}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9094}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      retries: 3
+      properties:
+        enable.idempotence: true
+    template:
+      observation-enabled: true     # 프로듀서 스팬 + 레코드 헤더에 traceparent 심기
+
+delivery:
+  outbox:
+    # 아웃박스 폴러 주기. "DB엔 주문이 있는데 이벤트는 안 갔다"를 구조적으로 막는 장치.
+    poll-interval-ms: 200
+    batch-size: 100
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, metrics, prometheus
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+# OTel 자바 에이전트가 MDC 에 trace_id/span_id 를 꽂아준다.
+# 로키에서 로그 보다가 바로 템포 트레이스로 뛰려면 이 두 개가 로그에 있어야 한다.
+logging:
+  pattern:
+    level: "%5p [${spring.application.name},%X{trace_id:-},%X{span_id:-}]"

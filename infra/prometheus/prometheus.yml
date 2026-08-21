@@ -1,0 +1,82 @@
+# 앱은 호스트에서 뜨고 프로메테우스는 컨테이너라서 host.docker.internal 로 긁는다.
+# 인스턴스를 늘릴 때마다 targets 에 포트를 추가하면 된다 —
+# 수평확장 실험에서 인스턴스별 지표를 따로 보려면 이 목록이 손잡이가 된다.
+global:
+  scrape_interval: 5s
+  evaluation_interval: 15s
+  external_labels:
+    env: local
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+scrape_configs:
+  - job_name: order-api
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: [ "host.docker.internal:8090" ]
+
+  - job_name: location-ingest
+    metrics_path: /actuator/prometheus
+    static_configs:
+      # 시나리오 A 에서 인스턴스를 늘리면 8191, 8192 ... 를 여기에 추가한다
+      - targets: [ "host.docker.internal:8091" ]
+
+  - job_name: geo-indexer
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: [ "host.docker.internal:8092" ]
+
+  - job_name: dispatch-engine
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: [ "host.docker.internal:8093" ]
+
+  - job_name: offer-relay
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: [ "host.docker.internal:8094" ]
+
+  - job_name: notification-worker
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: [ "host.docker.internal:8095" ]
+
+  - job_name: settlement-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: [ "host.docker.internal:8096" ]
+
+  - job_name: rider-simulator
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: [ "host.docker.internal:8097" ]
+
+  # ── 인프라 ────────────────────────────────────────────────────────────────
+  - job_name: kafka
+    static_configs:
+      - targets: [ "kafka-exporter:9308" ]   # kafka_consumergroup_lag = 스케일아웃 트리거
+
+  - job_name: redis
+    static_configs:
+      - targets: [ "redis-exporter:9121" ]
+
+  - job_name: rabbitmq
+    static_configs:
+      - targets: [ "rabbitmq:15692" ]        # 큐 깊이 / unacked 메시지 수
+
+  - job_name: otel-collector
+    static_configs:
+      - targets: [ "otel-collector:8889" ]
+
+  - job_name: tempo
+    static_configs:
+      - targets: [ "tempo:3200" ]
+
+  - job_name: loki
+    static_configs:
+      - targets: [ "loki:3100" ]
+
+  - job_name: prometheus
+    static_configs:
+      - targets: [ "localhost:9090" ]

@@ -1,0 +1,226 @@
+# 로컬 개발용 인프라. 앱은 호스트에서 직접 뜨고(scripts/start.sh), 여기 있는 건 다 컨테이너.
+#
+# 포트를 전부 비켜 잡아뒀다 — social-discovery 같은 다른 프로젝트를 동시에 띄워도
+# 안 부딪히게 하려고. (mysql 33306, redis 6380, kafka 9094, grafana 3001 ...)
+name: delivery
+
+services:
+  # ── 저장소 ──────────────────────────────────────────────────────────────────
+  mysql:
+    image: mysql:8.0.36
+    container_name: delivery-mysql
+    restart: unless-stopped
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --skip-character-set-client-handshake
+    environment:
+      MYSQL_ROOT_PASSWORD: 1234
+      MYSQL_USER: dev_user
+      MYSQL_PASSWORD: dev_password
+      MYSQL_DATABASE: delivery
+    ports:
+      - "33306:3306"
+    volumes:
+      - ./.data/mysql:/var/lib/mysql
+      - ./mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p1234" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7.4
+    container_name: delivery-redis
+    restart: unless-stopped
+    # GEO/락/카운터가 주 용도라 AOF 로 최소한의 지속성만 켠다
+    command: [ "redis-server", "--appendonly", "yes" ]
+    ports:
+      - "6380:6379"
+    volumes:
+      - ./.data/redis:/data
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redisinsight:
+    image: redis/redisinsight:2.64.1
+    container_name: delivery-redisinsight
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "5541:5540"
+
+  # ── 메시징 ──────────────────────────────────────────────────────────────────
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: delivery-kafka
+    restart: unless-stopped
+    ports:
+      - "9094:9094"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9094,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      # 파티션 수가 확장의 천장이라는 걸 직접 보려면 토픽을 명시 생성해야 한다.
+      # auto-create 를 켜두면 브로커 기본값(파티션 1)로 만들어져서 실험이 성립하지 않는다.
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      CLUSTER_ID: RGVsaXZlcnlLUmFmdENJRA
+    volumes:
+      - ./.data/kafka:/var/lib/kafka/data
+    healthcheck:
+      test: [ "CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9094" ]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: delivery-kafka-ui
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "9091:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      DYNAMIC_CONFIG_ENABLED: "true"
+
+  rabbitmq:
+    image: rabbitmq:4-management
+    container_name: delivery-rabbitmq
+    restart: unless-stopped
+    hostname: delivery-rabbit          # 이걸 고정 안 하면 컨테이너 재생성 때 데이터 디렉토리가 갈려서 큐가 사라진다
+    ports:
+      - "5672:5672"     # AMQP
+      - "15672:15672"   # 관리 UI
+      - "15692:15692"   # 프로메테우스 메트릭
+    environment:
+      RABBITMQ_DEFAULT_USER: dev_user
+      RABBITMQ_DEFAULT_PASS: dev_password
+    volumes:
+      - ./.data/rabbitmq:/var/lib/rabbitmq
+      - ./rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
+      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+    healthcheck:
+      test: [ "CMD", "rabbitmq-diagnostics", "-q", "ping" ]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
+  # ── 관측: 수집기 ────────────────────────────────────────────────────────────
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.115.1
+    container_name: delivery-otel-collector
+    restart: unless-stopped
+    command: [ "--config=/etc/otelcol/config.yaml" ]
+    volumes:
+      - ./otel/collector-config.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "4317:4317"     # OTLP gRPC — 앱이 여기로 쏜다
+      - "4318:4318"     # OTLP HTTP
+      - "8889:8889"     # 컬렉터가 만든 메트릭 (프로메테우스가 긁는다)
+      - "13133:13133"   # health_check
+    depends_on:
+      - tempo
+      - loki
+
+  # ── 관측: 저장소 ────────────────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    container_name: delivery-prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      # 템포의 span-metrics 가 remote_write 로 밀어넣기 때문에 필요
+      - --web.enable-remote-write-receiver
+      - --enable-feature=exemplar-storage
+    ports:
+      - "9099:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules:/etc/prometheus/rules:ro
+      - ./.data/prometheus:/prometheus
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # 호스트에서 뜬 앱의 actuator 를 긁으려고
+
+  loki:
+    image: grafana/loki:3.3.2
+    container_name: delivery-loki
+    restart: unless-stopped
+    command: [ "-config.file=/etc/loki/loki.yaml" ]
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./loki/loki.yaml:/etc/loki/loki.yaml:ro
+      - ./.data/loki:/loki
+
+  tempo:
+    image: grafana/tempo:2.7.0
+    container_name: delivery-tempo
+    restart: unless-stopped
+    command: [ "-config.file=/etc/tempo/tempo.yaml" ]
+    ports:
+      - "3200:3200"     # 조회 API (그라파나가 붙는다)
+    volumes:
+      - ./tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - ./.data/tempo:/var/tempo
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    container_name: delivery-grafana
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      # 트레이스 → 로그 → 메트릭 왕복에 필요한 기능들
+      GF_FEATURE_TOGGLES_ENABLE: traceqlEditor traceToMetrics
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./.data/grafana:/var/lib/grafana
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
+
+  # ── 관측: 인프라 익스포터 ───────────────────────────────────────────────────
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:v1.8.0
+    container_name: delivery-kafka-exporter
+    restart: unless-stopped
+    command: [ "--kafka.server=kafka:29092" ]
+    ports:
+      - "9308:9308"     # 컨슈머 랙(kafka_consumergroup_lag) 이 여기서 나온다
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.67.0
+    container_name: delivery-redis-exporter
+    restart: unless-stopped
+    environment:
+      REDIS_ADDR: redis://redis:6379
+    ports:
+      - "9121:9121"
+    depends_on:
+      redis:
+        condition: service_healthy

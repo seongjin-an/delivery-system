@@ -1,0 +1,53 @@
+server:
+  port: ${SERVER_PORT:8092}
+
+spring:
+  application:
+    name: geo-indexer
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6380}
+      lettuce:
+        pool:
+          enabled: true
+          max-active: 32
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9094}
+    consumer:
+      group-id: geo-indexer
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      auto-offset-reset: latest      # 위치는 과거 값이 쓸모없다. 밀렸으면 버리고 현재부터.
+      enable-auto-commit: false
+      max-poll-records: 500
+    listener:
+      ack-mode: manual
+      observation-enabled: true      # 컨슈머 스팬을 프로듀서 트레이스에 이어붙인다
+
+delivery:
+  listener:
+    rider-location:
+      topic: rider.location
+      # 시나리오 B 의 손잡이: concurrency 를 파티션 수(6) 위로 올려도 처리량이 안 늘어난다.
+      #   인스턴스 수 × concurrency 가 파티션 수를 넘는 순간부터 남는 스레드는 그냥 놀고 있다.
+      concurrency: 3
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, metrics, prometheus
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+# OTel 자바 에이전트가 MDC 에 trace_id/span_id 를 꽂아준다.
+# 로키에서 로그 보다가 바로 템포 트레이스로 뛰려면 이 두 개가 로그에 있어야 한다.
+logging:
+  pattern:
+    level: "%5p [${spring.application.name},%X{trace_id:-},%X{span_id:-}]"

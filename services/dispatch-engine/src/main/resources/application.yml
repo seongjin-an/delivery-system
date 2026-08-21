@@ -1,0 +1,67 @@
+server:
+  port: ${SERVER_PORT:8093}
+
+spring:
+  application:
+    name: dispatch-engine
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6380}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9094}
+    consumer:
+      group-id: dispatch-engine
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      auto-offset-reset: earliest    # 주문은 하나도 흘리면 안 된다
+      enable-auto-commit: false
+    listener:
+      ack-mode: manual
+      observation-enabled: true
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+    template:
+      observation-enabled: true
+  rabbitmq:
+    host: ${RABBIT_HOST:localhost}
+    port: ${RABBIT_PORT:5672}
+    username: ${RABBIT_USERNAME:dev_user}
+    password: ${RABBIT_PASSWORD:dev_password}
+    template:
+      observation-enabled: true      # AMQP 헤더로도 traceparent 를 넘긴다
+
+delivery:
+  listener:
+    order-created:
+      topic: order.created
+      concurrency: 3
+  dispatch:
+    # 후보 검색 반경. 넓히면 후보는 늘지만 GEOSEARCH 비용도 같이 오른다.
+    search-radius-meters: 3000
+    max-candidates: 10
+    # 배차 락 유지 시간. 제안 TTL(10s)보다 넉넉해야 만료 처리 중에 락이 먼저 풀리지 않는다.
+    lock-ttl-ms: 15000
+    # 시나리오 D 의 손잡이: zone 단위로 락을 쪼개면 인스턴스를 늘려도 경합이 안 터진다.
+    lock-scope: ORDER     # ORDER | ZONE
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, metrics, prometheus
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+# OTel 자바 에이전트가 MDC 에 trace_id/span_id 를 꽂아준다.
+# 로키에서 로그 보다가 바로 템포 트레이스로 뛰려면 이 두 개가 로그에 있어야 한다.
+logging:
+  pattern:
+    level: "%5p [${spring.application.name},%X{trace_id:-},%X{span_id:-}]"

@@ -1,0 +1,29 @@
+### 뼈대 확인 — 여덟 개 모듈이 다 뜨는지
+GET {{orderApi}}/hello
+
+###
+GET {{locationIngest}}/hello
+
+###
+GET {{geoIndexer}}/hello
+
+###
+GET {{dispatchEngine}}/hello
+
+###
+GET {{offerRelay}}/hello
+
+###
+GET {{notificationWorker}}/hello
+
+###
+GET {{settlement}}/hello
+
+###
+GET {{simulator}}/hello
+
+### actuator — 프로메테우스가 긁는 그 엔드포인트
+GET {{dispatchEngine}}/actuator/prometheus
+
+###
+GET {{dispatchEngine}}/actuator/health

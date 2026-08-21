@@ -1,0 +1,54 @@
+server:
+  port: ${SERVER_PORT:8096}
+
+spring:
+  application:
+    name: settlement-service
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:33306/delivery?serverTimezone=UTC&characterEncoding=UTF-8}
+    username: ${DB_USERNAME:dev_user}
+    password: ${DB_PASSWORD:dev_password}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9094}
+    consumer:
+      # 이 그룹의 오프셋을 리셋하면 과거 배달 이벤트가 처음부터 다시 흘러온다.
+      #   kafka-consumer-groups --reset-offsets --to-earliest --group settlement --execute
+      # 정산 로직을 고친 뒤 과거분을 재계산하는 게 이 서비스의 존재 이유.
+      group-id: settlement
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+    listener:
+      ack-mode: manual
+      observation-enabled: true
+
+delivery:
+  listener:
+    delivery-completed:
+      topic: delivery.completed
+      concurrency: 3
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, metrics, prometheus
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+# OTel 자바 에이전트가 MDC 에 trace_id/span_id 를 꽂아준다.
+# 로키에서 로그 보다가 바로 템포 트레이스로 뛰려면 이 두 개가 로그에 있어야 한다.
+logging:
+  pattern:
+    level: "%5p [${spring.application.name},%X{trace_id:-},%X{span_id:-}]"

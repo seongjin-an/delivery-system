@@ -1,0 +1,50 @@
+server:
+  port: ${SERVER_PORT:8095}
+
+spring:
+  application:
+    name: notification-worker
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6380}
+  rabbitmq:
+    host: ${RABBIT_HOST:localhost}
+    port: ${RABBIT_PORT:5672}
+    username: ${RABBIT_USERNAME:dev_user}
+    password: ${RABBIT_PASSWORD:dev_password}
+    listener:
+      simple:
+        acknowledge-mode: manual
+        # 시나리오 C 의 손잡이. 이걸 크게 올려두면 워커 하나가 메시지를 잔뜩 쥐고
+        # 외부 API 를 두드리다 429 를 맞는다. 큐 깊이는 줄어드는데 실패율만 오른다.
+        prefetch: 250
+        concurrency: 4
+        max-concurrency: 16
+        observation-enabled: true
+
+delivery:
+  push:
+    # 외부 푸시 게이트웨이가 허용하는 초당 요청 수. 인스턴스 수와 무관하게 전체 합이 이걸 넘으면 안 된다.
+    global-rate-per-sec: 200
+    # 가짜 외부 API 지연(ms). 이걸 올리면 워커를 늘려도 안 되는 상황이 재현된다.
+    fake-latency-ms: 120
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, metrics, prometheus
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+# OTel 자바 에이전트가 MDC 에 trace_id/span_id 를 꽂아준다.
+# 로키에서 로그 보다가 바로 템포 트레이스로 뛰려면 이 두 개가 로그에 있어야 한다.
+logging:
+  pattern:
+    level: "%5p [${spring.application.name},%X{trace_id:-},%X{span_id:-}]"

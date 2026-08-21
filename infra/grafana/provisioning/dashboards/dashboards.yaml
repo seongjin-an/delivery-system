@@ -1,0 +1,14 @@
+# 대시보드 JSON 은 TODO.md 3단계에서 여기(infra/grafana/dashboards/)에 넣는다.
+apiVersion: 1
+
+providers:
+  - name: delivery
+    orgId: 1
+    folder: Delivery
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards/json
+      foldersFromFilesStructure: false

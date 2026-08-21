@@ -1,0 +1,78 @@
+# 수평확장 판단 규칙. "언제 늘려야 하나"를 눈대중이 아니라 규칙으로 적어두는 게 목적이다.
+# 나중에 KEDA 를 붙이면 이 규칙들이 그대로 스케일 트리거가 된다 (TODO.md 5단계).
+groups:
+  - name: scaling-signals
+    interval: 15s
+    rules:
+      # ── 기록 규칙: 대시보드와 알람이 같은 정의를 쓰게 ──────────────────────
+      # 컨슈머 그룹이 실제로 배정받은 파티션 수. 이 값이 kafka_topic_partitions 와 같아지면
+      # 인스턴스를 더 늘려도 남는 스레드는 놀게 된다 = 파티션 천장 (시나리오 B).
+      - record: delivery:assigned_partitions
+        expr: count by (consumergroup, topic) (kafka_consumergroup_current_offset)
+
+      - record: delivery:topic_partitions
+        expr: max by (topic) (kafka_topic_partitions)
+
+      # 그룹별 총 랙
+      - record: delivery:consumer_lag
+        expr: sum by (consumergroup, topic) (kafka_consumergroup_lag)
+
+      # ── 알람 ──────────────────────────────────────────────────────────────
+      # 지금 밀린 양보다 "계속 늘고 있는지"가 중요하다. 순간값으로 트리거하면
+      # 스파이크마다 스케일이 요동친다.
+      - alert: KafkaConsumerLagGrowing
+        expr: |
+          delivery:consumer_lag > 10000
+          and deriv(delivery:consumer_lag[5m]) > 0
+        for: 3m
+        labels:
+          severity: warning
+          action: scale-out
+        annotations:
+          summary: "{{ $labels.consumergroup }} / {{ $labels.topic }} 랙이 5분간 증가 추세 (현재 {{ $value | humanize }})"
+          runbook: ".reference/scaling-scenarios.md 시나리오 B — 인스턴스를 늘려도 안 되면 파티션 천장인지 먼저 확인"
+
+      # 파티션을 다 배정받은 상태 = 스레드를 더 늘려도 효과 없음.
+      # 그 자체로 문제는 아니라서 severity 는 info. 랙 알람과 같이 떴을 때만 의미가 있다.
+      - alert: KafkaPartitionCeiling
+        expr: delivery:assigned_partitions >= on (topic) group_left () delivery:topic_partitions
+        for: 5m
+        labels:
+          severity: info
+          action: repartition
+        annotations:
+          summary: "{{ $labels.consumergroup }} 가 {{ $labels.topic }} 파티션을 전부 배정받았다"
+          runbook: "랙까지 쌓이고 있다면 인스턴스가 아니라 파티션(또는 파티션 키)을 손봐야 한다"
+
+      # 큐 적체. 단, 이것만 보고 워커를 늘리면 시나리오 C 함정에 빠진다.
+      - alert: RabbitQueueBacklog
+        expr: rabbitmq_queue_messages_ready > 5000
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.queue }} 에 {{ $value | humanize }}건 적체"
+          runbook: "컨슈머 CPU 를 같이 봐라. 한가한데 쌓이면 외부 병목이지 컨슈머 부족이 아니다"
+
+      # unacked 가 많은데 처리량이 안 오르면 prefetch 를 너무 크게 잡은 것.
+      # 워커 하나가 메시지를 잔뜩 쥐고 느려지면 그 물량이 다 인질이 된다.
+      - alert: RabbitUnackedHigh
+        expr: rabbitmq_queue_messages_unacked > 2000
+        for: 2m
+        labels:
+          severity: info
+          action: tune-prefetch
+        annotations:
+          summary: "{{ $labels.queue }} unacked {{ $value | humanize }}건 — prefetch 재검토"
+
+      # 배차 락 경합 (시나리오 D). 인스턴스를 늘렸는데 이게 오르면 늘린 게 원인이다.
+      - alert: RedisCommandSurgeWithoutThroughput
+        expr: |
+          rate(redis_commands_processed_total[2m]) > 20000
+          and rate(redis_commands_processed_total[2m]) / rate(redis_commands_processed_total[10m]) > 1.5
+        for: 3m
+        labels:
+          severity: warning
+          action: shard-lock
+        annotations:
+          summary: "레디스 명령 폭증 — 락 경합 의심 (.reference/scaling-scenarios.md 시나리오 D)"
