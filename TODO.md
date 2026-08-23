@@ -46,62 +46,101 @@
 
 세 기술이 한 요청 안에서 처음 만나는 단계. 여기까지 돌면 프로젝트의 척추가 생긴 것이다.
 
+> **코드를 짜기 전에 읽을 것**
+> - [`.reference/functional-spec.md`](.reference/functional-spec.md) — 아래 항목의 `OR-01` 같은 번호가
+>   전부 이 문서의 기능 번호다. 입력과 출력, 규칙, 예외, 완료 조건이 거기 다 있다.
+> - [`.reference/flow-scenarios.md`](.reference/flow-scenarios.md) — 2번(해피패스), 7번(라이더 경합),
+>   9번(수락과 만료 경합)이 여기서 바로 구현할 내용이다.
+> - [`.reference/dispatch-internals.md`](.reference/dispatch-internals.md) — 5장(락 두 개의 역할 차이),
+>   8장(수락 CAS), 11장(하나씩 빼먹으면 어떻게 깨지는지)
+
+### 공통 (COM)
+- [ ] `libs/common` 에 `RedisKeys.ridersHeartbeat` 추가 — 오프라인 정리용 ZSET 인덱스
+- [ ] 좌표 검증 유틸 (한국 범위) + `zoneId` 계산 유틸
+- [ ] `GlobalExceptionHandler` — 기능 정의서 3.6 의 에러 코드 표대로
+- [ ] 컨슈머 공통 에러 핸들러 — `BusinessException` 은 즉시 DLT, 나머지는 3회 백오프
+
 ### order-api
-- [ ] `POST /api/orders` — 주문 생성 (가게 좌표, 목적지 좌표, zoneId, 금액)
-- [ ] `orders` 테이블 + `outbox` 테이블
-- [ ] **아웃박스 패턴** — 주문 INSERT 와 이벤트 INSERT 를 한 트랜잭션에 넣는다
-      *왜: "DB엔 주문이 있는데 배차가 안 걸렸다" 를 구조적으로 막는다. 카프카 발행 실패와 커밋 실패가 갈라지는 순간이 없어진다.*
-- [ ] 아웃박스 폴러 → `order.created` 발행 (key = orderId)
-- [ ] `GET /api/orders/{id}` — 배차 상태 조회
-- [ ] 레디스 멱등키 — `Idempotency-Key` 헤더로 같은 주문 두 번 생성 막기
+- [ ] `OR-01` `POST /api/orders` — 주문 생성, 멱등키 필수
+      *왜 아웃박스인가: 주문 INSERT 와 이벤트 INSERT 를 한 트랜잭션에 넣으면 "DB엔 주문이 있는데
+      배차가 안 걸렸다" 가 구조적으로 안 생긴다. 카프카 발행 실패와 커밋 실패가 갈라지는 순간이 없어진다.*
+- [ ] `OR-02` `GET /api/orders/{orderId}` — 상태와 attempt, timeline
+- [ ] `OR-03` `POST /api/orders/{orderId}/pickup`
+- [ ] `OR-04` `POST /api/orders/{orderId}/complete` — `delivery.completed` 발행, 라이더 해제
+- [ ] `OR-05` `POST /api/orders/{orderId}/cancel` — 진행 중 제안을 `CANCELLED` 로
+- [ ] `OR-06` 아웃박스 폴러 200ms — `SELECT ... FOR UPDATE SKIP LOCKED`
+- [ ] `OR-07` `dispatch.assigned` / `dispatch.failed` 소비 → 상태 반영 (조건부 갱신으로 멱등)
+- [ ] `orders`, `outbox` 테이블
 
 ### location-ingest
-- [ ] `POST /api/riders/{id}/location` — 좌표 수신 → `rider.location` 발행 (key = riderId)
-      *왜: 이 서비스는 상태가 하나도 없다. 그래서 시나리오 A 의 기준선이 된다.*
-- [ ] 프로듀서 튜닝 — `linger.ms`, `batch.size`, `compression.type=lz4`, `acks=1`
+- [ ] `LI-01` `POST /api/riders/{riderId}/location` → `rider.location` (key = riderId)
+      *왜: 이 서비스는 상태가 하나도 없다. 그래서 확장 시나리오 A 의 기준선이 된다.*
+- [ ] 프로듀서 튜닝 — `acks=1`, `linger.ms=20`, `batch.size=64KB`, `compression.type=lz4`
       *왜: 위치는 한 점 잃어도 3초 뒤 다음 점이 온다. 신뢰성보다 처리량이 맞는 유일한 토픽.*
-- [ ] 이동거리 필터 — 15m 미만이면 발행 생략 (정차 중인 라이더가 트래픽 다 먹는 것 방지)
+- [ ] 이동거리 필터 15m — 직전 좌표를 인스턴스 메모리에 캐시
+      *왜 레디스를 안 쓰나: 왕복이 생기면 무상태라는 이점이 사라진다. 인스턴스가 늘면 필터가
+      느슨해지는데 그건 감수한다 (기능 정의서 LI-01 규칙 2번)*
 
 ### geo-indexer
-- [ ] `rider.location` 컨슈머 → 레디스 `GEOADD riders:online`
-- [ ] `rider:state:{id}` 해시 갱신 (status, lastSeenAt, currentOrderId)
-- [ ] 오프라인 정리 — 일정 시간 좌표가 없는 라이더를 `GEO` 에서 제거
+- [ ] `GI-01` `rider.location` 소비 → `GEOADD` + `HSET rider:state` + `ZADD riders:heartbeat`
+- [ ] 배치 안에서 라이더별로 마지막 좌표만 남기고 파이프라인으로 한 번에 쓰기
+- [ ] `status` 는 조건부로만 갱신 — `OFFERED` / `DELIVERING` 은 절대 안 건드린다
+      *안 지키면: 배달 중 라이더가 새 주문 후보로 다시 잡힌다 (흐름 시나리오 10번)*
+- [ ] `GI-02` 오프라인 정리 10초 주기 — `ZRANGEBYSCORE` 로 대상 찾고 `SET lock:sweep NX` 로 단독 실행
+- [ ] `GI-03` `GET /api/riders/{riderId}/state` — 디버깅용
 - [ ] 수동 ack + `auto-offset-reset: latest`
       *왜: 밀린 위치는 쓸모없다. 과거를 따라잡느니 현재부터 보는 게 맞다.*
 
 ### dispatch-engine
-- [ ] `order.created` 컨슈머
-- [ ] `GEOSEARCH` 로 반경 3km 후보 조회 → 점수 계산(거리 + 대기시간) → 상위 10명
-- [ ] 후보 목록을 레디스 리스트 `dispatch:candidates:{orderId}` 에 저장
-- [ ] `SET NX PX` 로 배차 락 — 같은 주문을 두 인스턴스가 동시에 배차하는 것 방지
-- [ ] 1순위에게 배차 제안 → 래빗엠큐 `dispatch.x` 로 `offer.created` 발행
-- [ ] `POST /api/offers/{offerId}/accept` — 라이더 수락 접수 → `dispatch.assigned` 발행
+- [ ] `DE-01` `order.created` 소비 — 리스 획득 → 좀비 판정 → 후보 검색 → 제안
+- [ ] 좀비 판정 표 그대로 구현 (기능 정의서 DE-01 규칙 2번)
+      *`EXISTS` 만 보면 "해시는 있는데 타이머가 없는" 주문이 영구 방치된다*
+- [ ] `DE-02` `GEOSEARCH ... ASC COUNT 30` → 파이프라인으로 상태 조회 → 점수순 10명
+      *`COUNT` 와 `ASC` 를 같이 줘야 조기 종료된다. 안 주면 반경 안 500명을 다 계산한다*
+- [ ] `DE-03` 제안 발송 — `lock:rider` 획득, 새 `offerId` 발급, 한 번만 발행
+- [ ] publisher confirm — 실패하면 롤백하고 카프카 ack 하지 않기
+- [ ] `DE-04` `POST /api/offers/{offerId}/accept` — Lua CAS, 반환값 4가지를 HTTP 응답으로
+- [ ] `DE-05` `POST /api/offers/{offerId}/reject` — `dispatch.dlx` 에 직접 발행해 즉시 다음 후보로
+- [ ] `DE-06` `GET /api/dispatch/{orderId}` — 레디스 상태 덤프
+- [ ] Lua 스크립트 3종 — 락 해제, 제안 수락, 제안 만료
 
 ### offer-relay
-- [ ] **래빗엠큐 토폴로지 선언** — `RabbitTopologyConfig`
-      - `dispatch.x` (topic) → `dispatch.offer.timer` (TTL 10s, DLX, **컨슈머 없음**)
-      - `dispatch.x` → `dispatch.offer.notify` (알림 워커가 소비)
-      - `dispatch.dlx` → `dispatch.offer.expired` (여기를 offer-relay 가 소비)
-      *왜: 이게 래빗엠큐를 쓰는 이유 전부다. "특정 한 명에게, 10초 안에, 안 받으면 다음 사람" 을 카프카로는 못 만든다.*
+- [ ] `RE-01` 래빗엠큐 토폴로지 선언 — `RabbitTopologyConfig`
+      *왜: 이게 래빗엠큐를 쓰는 이유 전부다. "특정 한 명에게, 10초 안에, 안 받으면 다음 사람" 을
+      카프카로는 못 만든다.*
       *주의: 타이머 큐에 리스너를 붙이면 TTL 이 흐를 틈이 없어서 재제안이 영원히 안 돈다.*
-- [ ] 만료 제안 수신 → 레디스에서 수락 여부 확인 → 이미 수락됐으면 버림
-- [ ] 아니면 `LPOP` 으로 다음 후보 꺼내 재제안 (attempt + 1)
+- [ ] `RE-02` 만료 제안 처리 — 규칙 8단계를 순서대로
+- [ ] **펜싱 규칙** — 메시지의 `offerId` 가 레디스의 현재 `offerId` 와 다르면 버린다
+      *안 지키면: 거절로 이미 다음 후보에게 넘어갔는데 옛 타이머가 그걸 또 끊는다 (기능 정의서 3.9)*
+- [ ] 직전 라이더 `lock:rider` 해제 + `status` 를 `IDLE` 로
+      *빼먹으면 그 라이더가 12초 동안 다른 주문의 후보가 못 된다*
 - [ ] `max-attempts` 소진 시 `dispatch.failed` 발행
-- [ ] `lock:rider:{id}` — 한 라이더에게 두 주문이 동시에 제안되는 것 방지
 
 ### notification-worker
-- [ ] `dispatch.offer.notify` 소비 → 가짜 푸시 발송 (지연 흉내)
-- [ ] `notify.push` 우선순위 큐 (`x-max-priority=10`) — 배차 제안 9, 마케팅 1
+- [ ] `NW-01` `dispatch.offer.notify` 소비 → `notify.push` 에 priority 9 로 투입
+- [ ] `NW-02` `notify.push` 소비 → 시뮬레이터 웹훅으로 POST (가짜 푸시)
+      *이 웹훅이 프론트 없이 루프를 닫는 장치다. 제안 발송에서 라이더 수락까지 사람 손 없이 돈다*
+- [ ] 레디스 토큰버킷 — 인스턴스 수와 무관한 전역 초당 한도
+- [ ] `fake-latency-ms`, `fail-rate` 를 설정으로 (시나리오 C 재현용)
 - [ ] 실패 시 DLQ
 
 ### rider-simulator
-- [ ] `POST /sim/start` — 라이더 N명이 3초마다 좌표 전송 (가상 스레드)
-- [ ] 주문 생성기 — 초당 M건
-- [ ] 라이더 응답기 — 확률 `accept-rate` 로 수락, `accept-delay-ms` 뒤에
+- [ ] `SM-01` `POST /sim/start` — 라이더 N명 가상 스레드 루프 + 주문 생성기
+- [ ] `SM-02` `POST /sim/stop`
+- [ ] `SM-03` `GET /sim/status` — 수락/거절/무응답 건수까지
+- [ ] `SM-04` `POST /sim/push` 웹훅 — 확률에 따라 수락, 거절, 무응답
       *왜: 프론트가 없으니 이게 유일한 손잡이다. 이 서비스의 품질이 실험의 품질을 결정한다.*
+- [ ] 수락 뒤 픽업과 배달 완료까지 이어서 호출 (시간을 압축해서 5초, 30초)
+- [ ] 라이더가 실제로 움직이게 만들기 — 안 움직이면 이동거리 필터에 다 걸려 트래픽이 안 생긴다
 
-**1단계 완료 조건:** 시뮬레이터를 켜면 주문이 생기고, 배차 제안이 가고, 수락하면 배차가 확정되고,
-아무도 안 받으면 10초 뒤 다음 라이더에게 넘어간다. 로그로 그 흐름이 보인다.
+### settlement-service
+- [ ] `SE-01` `delivery.completed` 소비 → `settlement_detail` + `settlement_daily`
+      *`INSERT IGNORE` 로 detail 을 먼저 넣고, 영향 행이 1일 때만 daily 를 더한다.
+      이 구조가 6단계 리플레이 멱등성의 핵심이다*
+- [ ] `SE-02` `GET /api/settlements`
+
+**1단계 완료 조건 (D1, D2):** 시뮬레이터를 켜면 주문이 생기고 제안이 가고 수락하면 배차가 확정되고
+배달 완료까지 이어진다. `acceptRate` 를 0으로 두면 attempt 가 5까지 올라가고 `FAILED` 가 된다.
 
 ---
 
@@ -117,6 +156,10 @@
       *그게 곧 래빗엠큐의 TTL+DLX 를 손으로 재구현하는 것이라는 걸 알게 된다.*
 - [ ] **레디스 GEO 없이 MySQL 공간 인덱스로 후보를 찾아본다**
       *예상: 주문 하나당 쿼리 하나. 초당 200 주문이면 DB 가 먼저 눕는다.*
+- [ ] **배차 상태를 MySQL 로 옮겨본다** — `order_dispatch` 테이블에 `lease_until` 컬럼
+      *레디스로 Lua CAS 와 락 TTL 을 직접 겪은 다음에 하는 게 중요하다. SQL `UPDATE ... WHERE` 한 줄로
+      같은 걸 하는 걸 보면 DB 가 그동안 뭘 공짜로 주고 있었는지 알게 된다.*
+      *비교 지표: 배차 p99, 초당 처리량, 그리고 프로세스를 죽였을 때 좀비 주문 건수*
 - [ ] 결과를 `.reference/tech-choice.md` 에 표로 정리 — "왜 이 셋을 같이 쓰는지" 에 대한 답
 
 ---
@@ -203,6 +246,8 @@
       *왜: 카프카를 쓰는 가장 실감 나는 이유. 정산 로직 버그를 고치고 지난 이벤트를 다시 흘려보낸다.*
       *멱등하게 안 짜두면 정산이 두 배로 찍힌다 — 그 실패를 한 번 겪어보는 것도 포함.*
 - [ ] README 에 아키텍처 다이어그램(mermaid) 완성
+- [ ] `.reference/flow-scenarios.md` 의 "아직 안 정한 것" 5개에 답을 채운다
+- [ ] `.reference/dispatch-internals.md` 의 "구현하기 전에 정할 것" 5개에 답을 채운다
 - [ ] `.reference/` 문서 정리 — 기술 선택 근거, 확장 시나리오 결과, 겪은 함정 목록
 - [ ] 처음 보는 사람이 `./scripts/start.sh` 하나로 전부 띄울 수 있는지 확인
 

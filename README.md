@@ -8,7 +8,8 @@
 직접 골라보는 것**이 목표다. 프론트엔드는 없다. 손잡이는 `rider-simulator` 와 그라파나다.
 
 > **현재 상태: 0단계 — 뼈대만.** 서비스 8개가 `/hello` 만 응답한다.
-> 앞으로 만들 것은 [`TODO.md`](TODO.md) 에 단계별로 적어뒀다.
+> 무엇을 만들지는 [`.reference/functional-spec.md`](.reference/functional-spec.md) 에 기능 단위로,
+> 어떤 순서로 만들지는 [`TODO.md`](TODO.md) 에 단계별로 적어뒀다.
 
 ## 왜 이 셋을 다 쓰나
 
@@ -98,6 +99,10 @@ sequenceDiagram
 
 타이머 큐에 컨슈머를 붙이면 안 된다. 바로 꺼내가면 TTL 이 흐를 틈이 없어서
 "10초 안에 안 받으면 다음 사람" 규칙 자체가 사라진다.
+
+주문 하나가 들어와서 정산까지 가는 동안 무엇이 어디로 흐르는지, 동시에 눌렀을 때 뭐가 꼬이는지,
+브로커가 죽으면 어떻게 되는지는 시나리오 13개로 따로 정리해뒀다.
+[`.reference/flow-scenarios.md`](.reference/flow-scenarios.md)
 
 ## 서비스
 
@@ -215,6 +220,9 @@ STOP_INFRA=true ./scripts/stop.sh   # 전부 종료
 
 `libs/common` 의 `RedisKeys` 를 반드시 거치게 한다. 문자열로 흩뿌리면 나중에 누가 쓰는지 못 찾는다.
 
+키마다 무엇을 막으려고 있는지, 락 두 개가 어떻게 역할을 나누는지, `GEOSEARCH` 안에서 실제로
+무슨 일이 벌어지는지는 [`.reference/dispatch-internals.md`](.reference/dispatch-internals.md) 에 정리해뒀다.
+
 ## 기술 스택
 
 Java 21 · Spring Boot 3.5.0 · Gradle 8.13 (Kotlin DSL, 멀티모듈)
@@ -239,7 +247,11 @@ delivery-system/
 │   └── .data/              컨테이너 볼륨 (gitignore)
 ├── scripts/                start · stop · status · logs · build · restart · scale
 ├── http/                   IntelliJ HTTP 클라이언트용 요청 모음
-├── .reference/             설계 메모 · 확장 시나리오
+├── .reference/
+│   ├── functional-spec.md     기능 정의서 (API, 규칙, 상태, 완료 조건)
+│   ├── flow-scenarios.md      흐름 시나리오 13개 (정상, 동시성, 고장, 운영)
+│   ├── dispatch-internals.md  dispatch-engine 과 레디스 사이 명령 단위 설계
+│   └── scaling-scenarios.md   수평확장 시나리오 4개
 ├── logs/ pids/             런타임 산출물 (gitignore)
 └── build.gradle.kts        subprojects 공통 설정
 ```
