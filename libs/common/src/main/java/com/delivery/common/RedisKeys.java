@@ -15,6 +15,17 @@ public final class RedisKeys {
         return "rider:state:" + riderId;
     }
 
+    /**
+     * 마지막 좌표 수신 시각 인덱스 (ZSET, score = epoch ms).
+     *
+     * <p>GEO 자료구조만으로는 "좌표가 오래된 라이더" 를 찾을 수 없어서 따로 둔다.
+     * 오프라인 정리 스케줄러가 ZRANGEBYSCORE 로 대상을 뽑는다.
+     */
+    public static final String RIDERS_HEARTBEAT = "riders:heartbeat";
+
+    /** 오프라인 정리 스케줄러가 인스턴스 하나만 돌게 하는 락 */
+    public static final String SWEEP_OFFLINE_LOCK = "lock:sweep:offline";
+
     /** 배차 후보 목록 (LIST, 점수순). offer-relay 가 LPOP 으로 다음 후보를 꺼낸다 */
     public static String candidates(String orderId) {
         return "dispatch:candidates:" + orderId;
