@@ -82,7 +82,7 @@
 - [ ] `OR-03` `POST /api/orders/{orderId}/pickup`
 - [ ] `OR-04` `POST /api/orders/{orderId}/complete` — `delivery.completed` 발행, 라이더 해제
 - [ ] `OR-05` `POST /api/orders/{orderId}/cancel` — 진행 중 제안을 `CANCELLED` 로
-- [ ] `OR-06` 아웃박스 폴러 200ms — `SELECT ... FOR UPDATE SKIP LOCKED`
+- [x] `OR-06` 아웃박스 폴러 200ms — `SELECT ... FOR UPDATE SKIP LOCKED`
 - [ ] `OR-07` `dispatch.assigned` / `dispatch.failed` 소비 → 상태 반영 (조건부 갱신으로 멱등)
 - [x] `orders`, `outbox` 테이블 — JPA 엔티티로 잡았다 (`ddl-auto: update`)
 
@@ -136,6 +136,34 @@ OR-02 에서 정한 것과 겪은 것
   마이크로초까지 받아온다. 기능 정의서 3.2 는 밀리초인데 응답에 `13:14:20.568110Z` 가 찍혔다.
   같은 시각을 MySQL(datetime(6)), 레디스(epoch ms 정수), JSON 세 군데에 넣는데 레디스에서만
   잘리면 나중에 두 값을 빼봤을 때 미묘하게 어긋난다. `common.Times.now()` 로 만들 때부터 자른다.
+
+OR-06 에서 확인한 것 (완료 조건 그대로)
+- order-api 두 대(8090, 8190)에 번갈아 주문 100건 → `order.created` 에 **정확히 100건**,
+  메시지 키(orderId)가 전부 서로 달라서 중복 0. `outbox` 100행 모두 `published_at` 채워짐.
+- 폴링 지연(아웃박스에 들어간 뒤 카프카로 나가기까지): 최소 58ms, 평균 297ms, 최대 901ms.
+  **이 숫자가 Debezium 으로 바꿨을 때 비교할 기준선이다.** 200ms 주기니까 평균이 그 절반쯤
+  나올 줄 알았는데, 100건이 한꺼번에 몰리면서 한 배치에 다 안 들어가 뒤로 밀린 게 있다.
+- 실제로 나가는 SQL 확인:
+  `SELECT * FROM outbox WHERE published_at IS NULL ORDER BY id LIMIT 100 FOR UPDATE SKIP LOCKED`
+
+SKIP LOCKED 가 왜 필요한지 세션 두 개로 직접 봤다
+- 세션 A 가 111~113 을 잠근 상태에서
+  - `FOR UPDATE SKIP LOCKED` → **275ms** 만에 **114~116** 을 받아간다 (다른 행)
+  - `FOR UPDATE` 만 → **3787ms** 를 기다렸다가 **111~113** 을 받는다 (같은 행)
+- 두 번째가 문제인 이유가 두 겹이다. 기다리느라 인스턴스를 늘린 의미가 없어지고,
+  기다린 끝에 받는 게 앞사람이 방금 발행한 그 행이라 카프카에 같은 이벤트가 두 번 나간다.
+
+OR-06 에서 정한 것
+- 스케줄러(`OutboxPoller`)와 트랜잭션(`OutboxRelay`)을 다른 빈으로 나눴다. 같은 클래스 안에서
+  `@Transactional` 메서드를 부르면 프록시를 안 거쳐서 트랜잭션이 안 걸리고, 그러면
+  `SELECT ... FOR UPDATE` 가 즉시 커밋돼 잠금이 하나도 안 남는다. 조용히 잘못되는 종류다.
+- `fixedRate` 가 아니라 `fixedDelay`. 한 번이 200ms 를 넘겼을 때 다음 실행이 겹쳐서 몰아치는 걸 막는다.
+- 폴러의 `poll()` 은 예외를 반드시 삼킨다. 스프링 스케줄러는 예외가 새어 나가면 그 작업을
+  아예 다시 안 돌린다. 그러면 아웃박스가 조용히 쌓이기만 하고 아무도 모른다.
+- 100건을 한 건씩 "보내고 확인" 하면 왕복이 100번이라 200ms 주기를 못 맞춘다. 다 던져놓고
+  `flush()` 한 다음 확인만 돌린다.
+- 실패해도 버리지 않는다. `attempt_count` 만 올리고 10회를 넘으면 경고를 남긴다. 몇 번 실패했다고
+  포기하면 "DB 엔 주문이 있는데 배차가 안 걸린" 주문이 생겨서 아웃박스를 쓴 이유가 사라진다.
 
 ### location-ingest
 - [ ] `LI-01` `POST /api/riders/{riderId}/location` → `rider.location` (key = riderId)
@@ -321,7 +349,7 @@ OR-02 에서 정한 것과 겪은 것
 ## 나중에 (하고 싶어지면)
 
 - [ ] 카프카 스트림즈로 존별 실시간 수급 집계 (라이더 대비 주문 비율)
-- [ ] 아웃박스 폴러를 Debezium CDC 로 교체
+- [ ] 아웃박스 폴러를 Debezium CDC 로 교체 ← **바로 다음에 할 것.** 폴러 기준선(평균 297ms)과 비교한다
 - [ ] Redisson 분산락 vs 직접 만든 `SET NX PX` 비교
 - [ ] 쿠버네티스로 옮기고 HPA/KEDA 를 제대로
 - [ ] 트랜잭셔널 프로듀서(exactly-once) 실험 — 얼마나 느려지는지 재본다
