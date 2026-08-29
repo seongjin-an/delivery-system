@@ -33,6 +33,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Import(GlobalExceptionHandler.class)
 class OrderControllerTest {
 
+    private static final long ORDER_ID = 558668931353510983L;
+
     private static final String BODY = """
             {
               "storeId": "store-001",
@@ -53,7 +55,7 @@ class OrderControllerTest {
     @Test
     void returns201WhenOrderIsCreated() throws Exception {
         given(orderCreateService.create(anyString(), any())).willReturn(
-                new OrderCreateService.Result("order-1", OrderStatus.CREATED, "Z3749_12702", true));
+                new OrderCreateService.Result(ORDER_ID, OrderStatus.CREATED, "Z3749_12702", true));
 
         mockMvc.perform(post("/api/orders")
                         .header(CommonHeaders.IDEMPOTENCY_KEY, "idem-key-1")
@@ -61,7 +63,7 @@ class OrderControllerTest {
                         .content(BODY))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.data.orderId").value("order-1"))
+                .andExpect(jsonPath("$.data.orderId").value(ORDER_ID))
                 .andExpect(jsonPath("$.data.status").value("CREATED"))
                 .andExpect(jsonPath("$.data.zoneId").value("Z3749_12702"))
                 .andExpect(jsonPath("$.code").doesNotExist());
@@ -71,14 +73,14 @@ class OrderControllerTest {
     @Test
     void returns200WhenRequestIsReplayed() throws Exception {
         given(orderCreateService.create(anyString(), any())).willReturn(
-                new OrderCreateService.Result("order-1", OrderStatus.CREATED, "Z3749_12702", false));
+                new OrderCreateService.Result(ORDER_ID, OrderStatus.CREATED, "Z3749_12702", false));
 
         mockMvc.perform(post("/api/orders")
                         .header(CommonHeaders.IDEMPOTENCY_KEY, "idem-key-1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(BODY))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.orderId").value("order-1"));
+                .andExpect(jsonPath("$.data.orderId").value(ORDER_ID));
     }
 
     @Test

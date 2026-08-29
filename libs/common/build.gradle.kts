@@ -5,7 +5,9 @@ plugins {
 }
 
 dependencies {
-    api("com.github.f4b6a3:uuid-creator:6.0.0")
+    // orderId, riderId, offerId 를 만드는 TSID. 64비트라 DB 에 BIGINT 로 들어간다.
+    // (처음엔 uuid-creator 로 UUIDv7 을 썼는데 CHAR(36) 이 인덱스마다 복사돼서 TSID 로 바꿨다)
+    api("com.github.f4b6a3:tsid-creator:5.2.6")
 
     api("org.springframework.boot:spring-boot-starter")
     api("org.springframework.boot:spring-boot-starter-validation")

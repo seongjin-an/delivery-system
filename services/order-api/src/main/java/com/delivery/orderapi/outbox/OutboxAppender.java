@@ -22,7 +22,7 @@ public class OutboxAppender {
 
     private final OutboxRepository outboxRepository;
 
-    public OutboxMessage append(String topic, String aggregateId, String partitionKey,
+    public OutboxMessage append(String topic, long aggregateId, String partitionKey,
                                 Object payload, Instant now) {
         return outboxRepository.save(OutboxMessage.pending(
                 aggregateId, topic, partitionKey, JsonUtil.toJson(payload), now));

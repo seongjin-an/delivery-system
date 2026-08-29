@@ -4,6 +4,10 @@ package com.delivery.common;
  * 레디스 키 규약.
  *
  * <p>키 이름을 문자열로 흩뿌리면 나중에 "이 키 누가 쓰는지" 를 못 찾는다. 전부 여기를 거치게 한다.
+ *
+ * <p>아이디를 받는 자리는 전부 long 이다. TSID 를 십진수 그대로 붙여서
+ * {@code dispatch:offer:558668931353510983} 같은 모양이 된다. DB 에 보이는 값, 로그에 찍히는 값,
+ * 레디스 키에 박힌 값이 전부 같은 숫자라야 장애 났을 때 눈으로 따라갈 수 있다.
  */
 public final class RedisKeys {
 
@@ -11,7 +15,7 @@ public final class RedisKeys {
     public static final String RIDERS_GEO = "riders:online";
 
     /** 라이더 상태 해시: status, lastSeenAt, currentOrderId */
-    public static String riderState(String riderId) {
+    public static String riderState(long riderId) {
         return "rider:state:" + riderId;
     }
 
@@ -27,26 +31,31 @@ public final class RedisKeys {
     public static final String SWEEP_OFFLINE_LOCK = "lock:sweep:offline";
 
     /** 배차 후보 목록 (LIST, 점수순). offer-relay 가 LPOP 으로 다음 후보를 꺼낸다 */
-    public static String candidates(String orderId) {
+    public static String candidates(long orderId) {
         return "dispatch:candidates:" + orderId;
     }
 
     /** 진행 중인 제안 상태 해시: riderId, offeredAt, state(OFFERED/ACCEPTED/EXPIRED) */
-    public static String offer(String orderId) {
+    public static String offer(long orderId) {
         return "dispatch:offer:" + orderId;
     }
 
     /** 배차 락 — SET NX PX. 같은 주문을 두 인스턴스가 동시에 배차하는 걸 막는다 */
-    public static String dispatchLock(String orderId) {
+    public static String dispatchLock(long orderId) {
         return "lock:dispatch:" + orderId;
     }
 
     /** 라이더 점유 락 — 한 라이더에게 두 주문이 동시에 제안되는 걸 막는다 */
-    public static String riderLock(String riderId) {
+    public static String riderLock(long riderId) {
         return "lock:rider:" + riderId;
     }
 
-    /** 멱등키 — 같은 요청이 두 번 와도 주문이 두 개 안 생기게 */
+    /**
+     * 멱등키 — 같은 요청이 두 번 와도 주문이 두 개 안 생기게.
+     *
+     * <p>여기만 long 이 아니다. 이 키는 우리가 만든 아이디가 아니라 클라이언트가 헤더로 보낸 값이라
+     * 형식을 우리가 정할 수 없다.
+     */
     public static String idempotency(String key) {
         return "idem:order:" + key;
     }

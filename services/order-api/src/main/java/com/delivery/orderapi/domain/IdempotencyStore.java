@@ -6,7 +6,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
-import java.util.Optional;
+import java.util.OptionalLong;
 
 /**
  * 같은 요청이 두 번 와도 주문이 두 개 안 생기게 막는다. 기능 정의서 3.7.
@@ -30,13 +30,14 @@ public class IdempotencyStore {
     private final StringRedisTemplate redis;
 
     /** 이 키를 처음 잡은 사람이면 true. 이미 누가 잡았으면 false */
-    public boolean reserve(String key, String orderId) {
-        return Boolean.TRUE.equals(
-                redis.opsForValue().setIfAbsent(RedisKeys.idempotency(key), orderId, TTL));
+    public boolean reserve(String key, long orderId) {
+        return Boolean.TRUE.equals(redis.opsForValue()
+                .setIfAbsent(RedisKeys.idempotency(key), Long.toString(orderId), TTL));
     }
 
-    public Optional<String> findOrderId(String key) {
-        return Optional.ofNullable(redis.opsForValue().get(RedisKeys.idempotency(key)));
+    public OptionalLong findOrderId(String key) {
+        String value = redis.opsForValue().get(RedisKeys.idempotency(key));
+        return value == null ? OptionalLong.empty() : OptionalLong.of(Long.parseLong(value));
     }
 
     /**

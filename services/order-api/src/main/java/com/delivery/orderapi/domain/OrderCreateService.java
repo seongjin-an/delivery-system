@@ -11,6 +11,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.OptionalLong;
 
 /**
  * OR-01 주문 생성.
@@ -47,7 +48,7 @@ public class OrderCreateService {
                     "가게와 목적지가 너무 멀어요 (%dm, 최대 %dm)".formatted(distanceMeters, MAX_DELIVERY_METERS));
         }
 
-        String orderId = Ids.newId();
+        long orderId = Ids.newId();
         if (!idempotencyStore.reserve(idempotencyKey, orderId)) {
             return replay(idempotencyKey, command);
         }
@@ -76,10 +77,14 @@ public class OrderCreateService {
      * 여기서 404 를 주면 앱이 "주문이 없네" 하고 또 새로 만들어서 중복 주문이 생긴다.
      */
     private Result replay(String idempotencyKey, NewOrder command) {
-        String existingOrderId = idempotencyStore.findOrderId(idempotencyKey)
-                .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_STATE,
-                        "멱등키 처리 중 문제가 생겼어요. 다시 시도해 주세요"));
+        OptionalLong reserved = idempotencyStore.findOrderId(idempotencyKey);
+        if (reserved.isEmpty()) {
+            // 키를 잡는 데는 실패했는데 읽으니 없다. TTL 이 그 사이에 끝난 아주 드문 경우다.
+            throw new BusinessException(ErrorCode.INVALID_STATE,
+                    "멱등키 처리 중 문제가 생겼어요. 다시 시도해 주세요");
+        }
 
+        long existingOrderId = reserved.getAsLong();
         return orderRepository.findById(existingOrderId)
                 .map(Result::replayed)
                 .orElseGet(() -> {
@@ -109,7 +114,7 @@ public class OrderCreateService {
     /**
      * 새로 만든 건지(201) 이미 있던 건지(200) 를 컨트롤러가 알아야 해서 같이 돌려준다.
      */
-    public record Result(String orderId, OrderStatus status, String zoneId, boolean isNew) {
+    public record Result(long orderId, OrderStatus status, String zoneId, boolean isNew) {
 
         static Result created(Order order) {
             return new Result(order.getOrderId(), order.getStatus(), order.getZoneId(), true);
@@ -119,7 +124,7 @@ public class OrderCreateService {
             return new Result(order.getOrderId(), order.getStatus(), order.getZoneId(), false);
         }
 
-        static Result inFlight(String orderId, String zoneId) {
+        static Result inFlight(long orderId, String zoneId) {
             return new Result(orderId, OrderStatus.CREATED, zoneId, false);
         }
     }

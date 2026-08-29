@@ -32,7 +32,7 @@ public class OrderWriter {
         outboxAppender.append(
                 KafkaTopics.ORDER_CREATED,
                 saved.getOrderId(),
-                saved.getOrderId(),   // 파티션 키 = orderId. 같은 주문의 이벤트 순서를 지킨다
+                Long.toString(saved.getOrderId()),  // 파티션 키 = orderId. 같은 주문의 순서를 지킨다
                 toEvent(saved),
                 saved.getCreatedAt());
         return saved;

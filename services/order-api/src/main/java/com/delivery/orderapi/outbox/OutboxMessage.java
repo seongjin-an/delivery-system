@@ -22,8 +22,9 @@ import java.time.Instant;
  * 발행하고 DB 커밋이 실패하면 없는 주문의 배차가 걸린다. 둘 다 손으로 찾아 고쳐야 하는 사고다.
  * 주문 행과 이벤트 행을 같은 트랜잭션에 넣으면 그 갈림길 자체가 없어진다.
  *
- * <p>PK 를 자동증가 정수로 둔 건 주문과 반대 이유다. 폴러가 오래된 것부터 순서대로 집어가야 해서
- * "먼저 들어온 게 반드시 작은 번호" 인 게 중요하다.
+ * <p>PK 를 자동증가 정수로 둔 건 주문과 반대 이유다. 주문 아이디(TSID)도 시간순으로 늘어나긴
+ * 하지만 같은 밀리초 안에서는 순서가 뒤섞인다. 폴러는 "먼저 들어온 게 반드시 작은 번호" 라야
+ * 오래된 것부터 정확히 집어갈 수 있어서, 여기는 DB 가 매겨주는 번호가 맞다.
  */
 @Entity
 @Table(name = "outbox", indexes = {
@@ -40,13 +41,19 @@ public class OutboxMessage {
     private Long id;
 
     /** 어느 주문의 이벤트인지. 장애 났을 때 이 컬럼으로 찾는다 */
-    @Column(name = "aggregate_id", length = 36, nullable = false)
-    private String aggregateId;
+    @Column(name = "aggregate_id", nullable = false)
+    private long aggregateId;
 
     @Column(name = "destination_topic", length = 100, nullable = false)
     private String destinationTopic;
 
-    /** 카프카 키로 그대로 쓴다. 같은 주문의 이벤트가 같은 파티션에 들어가 순서가 지켜진다 */
+    /**
+     * 카프카 키로 그대로 쓴다. 같은 주문의 이벤트가 같은 파티션에 들어가 순서가 지켜진다.
+     *
+     * <p>아이디는 long 인데 여기만 문자열인 게 어색해 보이지만, 카프카 키는 결국 바이트열이고
+     * 우리 프로듀서가 StringSerializer 를 쓴다. 확장 실험 B-1 에서 파티션 키를 존 단위로 바꿔볼
+     * 예정이라, 숫자 아닌 값이 들어올 자리를 열어두는 쪽이 낫다.
+     */
     @Column(name = "partition_key", length = 64, nullable = false)
     private String partitionKey;
 
@@ -65,7 +72,7 @@ public class OutboxMessage {
     @Column(name = "attempt_count", nullable = false)
     private int attemptCount;
 
-    private OutboxMessage(String aggregateId, String destinationTopic, String partitionKey,
+    private OutboxMessage(long aggregateId, String destinationTopic, String partitionKey,
                           String payload, Instant now) {
         this.aggregateId = aggregateId;
         this.destinationTopic = destinationTopic;
@@ -75,7 +82,7 @@ public class OutboxMessage {
         this.attemptCount = 0;
     }
 
-    public static OutboxMessage pending(String aggregateId, String destinationTopic,
+    public static OutboxMessage pending(long aggregateId, String destinationTopic,
                                         String partitionKey, String payload, Instant now) {
         return new OutboxMessage(aggregateId, destinationTopic, partitionKey, payload, now);
     }
