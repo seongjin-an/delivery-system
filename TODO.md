@@ -75,7 +75,7 @@
   `testRuntimeOnly("org.junit.platform:junit-platform-launcher")` 를 넣어 버전을 맞췄다.
 
 ### order-api
-- [ ] `OR-01` `POST /api/orders` — 주문 생성, 멱등키 필수
+- [x] `OR-01` `POST /api/orders` — 주문 생성, 멱등키 필수
       *왜 아웃박스인가: 주문 INSERT 와 이벤트 INSERT 를 한 트랜잭션에 넣으면 "DB엔 주문이 있는데
       배차가 안 걸렸다" 가 구조적으로 안 생긴다. 카프카 발행 실패와 커밋 실패가 갈라지는 순간이 없어진다.*
 - [ ] `OR-02` `GET /api/orders/{orderId}` — 상태와 attempt, timeline
@@ -84,7 +84,24 @@
 - [ ] `OR-05` `POST /api/orders/{orderId}/cancel` — 진행 중 제안을 `CANCELLED` 로
 - [ ] `OR-06` 아웃박스 폴러 200ms — `SELECT ... FOR UPDATE SKIP LOCKED`
 - [ ] `OR-07` `dispatch.assigned` / `dispatch.failed` 소비 → 상태 반영 (조건부 갱신으로 멱등)
-- [ ] `orders`, `outbox` 테이블
+- [x] `orders`, `outbox` 테이블 — JPA 엔티티로 잡았다 (`ddl-auto: update`)
+
+OR-01 에서 확인한 것 (MySQL + 레디스만 띄우고 order-api 한 대)
+- 정상 주문 201, 같은 멱등키로 다시 부르면 200 에 같은 `orderId`, `orders` 는 1건 그대로
+- 같은 멱등키로 동시에 10번 때렸더니 201 하나에 200 아홉 개, 주문 행은 1건이었다.
+  레디스 `SET NX` 가 문 앞에서 하나만 통과시킨다는 걸 눈으로 봤다.
+- 멱등키 없음 → `MISSING_IDEMPOTENCY_KEY`, 도쿄 좌표 → `INVALID_COORDINATE`,
+  강남→강릉(165km) → `INVALID_REQUEST`, 금액 0 → `INVALID_REQUEST` 전부 400
+- `outbox` 행의 `published_at` 은 아직 NULL 이다. 채우는 건 OR-06 폴러 몫.
+
+OR-01 에서 정한 것
+- `orders` PK 는 UUIDv7 문자열, `outbox` PK 는 자동증가 정수. 주문 아이디는 카프카 키와
+  레디스 키로 그대로 흘러다녀야 해서 미리 있어야 하고, 아웃박스는 폴러가 오래된 것부터
+  집어가야 해서 "먼저 들어온 게 반드시 작은 번호" 인 게 중요하다.
+- 거리는 접수 때 한 번 재서 `distance_meters` 에 저장한다. 20km 검사하느라 어차피 재는데,
+  OR-04 의 `delivery.completed` 에 또 필요하다.
+- 저장이 실패하면 멱등키를 놓아준다. 안 그러면 실패한 요청의 키가 한 시간 남아서
+  손님이 다시 눌러도 막히는데 정작 주문은 어디에도 없다.
 
 ### location-ingest
 - [ ] `LI-01` `POST /api/riders/{riderId}/location` → `rider.location` (key = riderId)
