@@ -1,6 +1,7 @@
 package com.delivery.orderapi.domain;
 
 import com.delivery.common.Ids;
+import com.delivery.common.Times;
 import com.delivery.common.exception.BusinessException;
 import com.delivery.common.exception.ErrorCode;
 import com.delivery.common.geo.Coordinates;
@@ -53,7 +54,7 @@ public class OrderCreateService {
             return replay(idempotencyKey, command);
         }
 
-        Instant now = Instant.now();
+        Instant now = Times.now();
         Order order = Order.create(orderId, command.storeId(),
                 command.storeLat(), command.storeLng(), command.destLat(), command.destLng(),
                 Zones.of(command.storeLat(), command.storeLng()),

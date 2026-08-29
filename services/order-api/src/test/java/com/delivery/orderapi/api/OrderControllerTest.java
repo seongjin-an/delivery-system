@@ -5,6 +5,7 @@ import com.delivery.common.exception.ErrorCode;
 import com.delivery.common.web.CommonHeaders;
 import com.delivery.common.web.GlobalExceptionHandler;
 import com.delivery.orderapi.domain.OrderCreateService;
+import com.delivery.orderapi.domain.OrderQueryService;
 import com.delivery.orderapi.domain.OrderStatus;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,11 +15,15 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.time.Instant;
+import java.util.List;
+
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -34,6 +39,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class OrderControllerTest {
 
     private static final long ORDER_ID = 558668931353510983L;
+    private static final long RIDER_ID = 881520076849260058L;
 
     private static final String BODY = """
             {
@@ -51,6 +57,9 @@ class OrderControllerTest {
 
     @MockitoBean
     private OrderCreateService orderCreateService;
+
+    @MockitoBean
+    private OrderQueryService orderQueryService;
 
     @Test
     void returns201WhenOrderIsCreated() throws Exception {
@@ -118,6 +127,48 @@ class OrderControllerTest {
                         .header(CommonHeaders.IDEMPOTENCY_KEY, "idem-key-1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(noStoreId))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+    }
+
+    // ── OR-02 주문 조회 ───────────────────────────────────────────────────
+
+    @Test
+    void returnsOrderDetailWithTimeline() throws Exception {
+        Instant createdAt = Instant.parse("2026-08-23T04:12:33.482Z");
+        given(orderQueryService.findDetail(ORDER_ID)).willReturn(
+                new OrderQueryService.OrderDetail(ORDER_ID, OrderStatus.ASSIGNED, RIDER_ID, 2, List.of(
+                        new OrderQueryService.TimelineEntry(OrderStatus.CREATED, createdAt),
+                        new OrderQueryService.TimelineEntry(OrderStatus.ASSIGNED, createdAt.plusSeconds(8)))));
+
+        mockMvc.perform(get("/api/orders/{orderId}", ORDER_ID))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.orderId").value(ORDER_ID))
+                .andExpect(jsonPath("$.data.status").value("ASSIGNED"))
+                .andExpect(jsonPath("$.data.riderId").value(RIDER_ID))
+                .andExpect(jsonPath("$.data.attempt").value(2))
+                .andExpect(jsonPath("$.data.timeline.length()").value(2))
+                .andExpect(jsonPath("$.data.timeline[0].status").value("CREATED"))
+                // 시각은 ISO-8601 문자열이라야 한다. 숫자로 나가면 기능 정의서 3.2 와 어긋난다.
+                .andExpect(jsonPath("$.data.timeline[0].at").value("2026-08-23T04:12:33.482Z"));
+    }
+
+    @Test
+    void returnsOrderNotFoundForUnknownOrder() throws Exception {
+        willThrow(new BusinessException(ErrorCode.ORDER_NOT_FOUND))
+                .given(orderQueryService).findDetail(ORDER_ID);
+
+        mockMvc.perform(get("/api/orders/{orderId}", ORDER_ID))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("ORDER_NOT_FOUND"));
+    }
+
+    /** 숫자가 아닌 아이디는 스프링 타입 변환에서 걸린다. 그것도 우리 에러 코드로 나가야 한다 */
+    @Test
+    void mapsNonNumericOrderIdToInvalidRequest() throws Exception {
+        mockMvc.perform(get("/api/orders/{orderId}", "not-a-number"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
     }

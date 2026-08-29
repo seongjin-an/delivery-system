@@ -78,7 +78,7 @@
 - [x] `OR-01` `POST /api/orders` — 주문 생성, 멱등키 필수
       *왜 아웃박스인가: 주문 INSERT 와 이벤트 INSERT 를 한 트랜잭션에 넣으면 "DB엔 주문이 있는데
       배차가 안 걸렸다" 가 구조적으로 안 생긴다. 카프카 발행 실패와 커밋 실패가 갈라지는 순간이 없어진다.*
-- [ ] `OR-02` `GET /api/orders/{orderId}` — 상태와 attempt, timeline
+- [x] `OR-02` `GET /api/orders/{orderId}` — 상태와 attempt, timeline (`order_status_history` 테이블 추가)
 - [ ] `OR-03` `POST /api/orders/{orderId}/pickup`
 - [ ] `OR-04` `POST /api/orders/{orderId}/complete` — `delivery.completed` 발행, 라이더 해제
 - [ ] `OR-05` `POST /api/orders/{orderId}/cancel` — 진행 중 제안을 `CANCELLED` 로
@@ -122,6 +122,20 @@ OR-01 에서 정한 것
   (8090~8097, 8190~8197, 8290~8297 은 나머지가 서로 안 겹치는 걸 확인했다)
 - JSON 에는 숫자로 나간다. 소비자가 전부 자바라 괜찮은데, 나중에 브라우저 프론트가 붙으면
   문자열로 바꿔야 한다. 자바스크립트 정수는 2^53 까지만 안전해서 TSID 뒷자리가 뭉개진다.
+
+OR-02 에서 정한 것과 겪은 것
+- timeline 때문에 `order_status_history` 테이블을 새로 만들었다. `orders` 행은 "지금 상태"
+  하나만 들고 있어서 CREATED → DISPATCHING → ASSIGNED 로 넘어가면 앞의 둘이 덮여 사라진다.
+  고객 지원에서 제일 자주 묻는 게 "왜 오래 걸렸냐" 인데 그걸 답하려면 단계별 시각이 남아야 한다.
+- 상태마다 컬럼을 따로 두는 방법(assigned_at, picked_up_at ...)은 안 쓴다. 상태가 늘 때마다
+  컬럼이 늘고, 배차는 후보가 바뀌면서 DISPATCHING 을 여러 번 지나가는데 그걸 못 담는다.
+- `OrderStatusRecorder` 를 따로 뒀다. 레포지토리 직접 호출이면 한 줄인데, OR-03/04/05/07 이
+  전부 상태를 바꿔서 그중 하나만 기록을 빼먹으면 timeline 에 구멍이 뚫린다. 이름 있는 자리를
+  만들어두면 빼먹었을 때 눈에 띈다.
+- **시각이 마이크로초로 나가는 걸 잡았다.** 자바 9부터 `Instant.now()` 가 OS 가 주는 대로
+  마이크로초까지 받아온다. 기능 정의서 3.2 는 밀리초인데 응답에 `13:14:20.568110Z` 가 찍혔다.
+  같은 시각을 MySQL(datetime(6)), 레디스(epoch ms 정수), JSON 세 군데에 넣는데 레디스에서만
+  잘리면 나중에 두 값을 빼봤을 때 미묘하게 어긋난다. `common.Times.now()` 로 만들 때부터 자른다.
 
 ### location-ingest
 - [ ] `LI-01` `POST /api/riders/{riderId}/location` → `rider.location` (key = riderId)

@@ -12,6 +12,8 @@ import java.time.Instant;
 /**
  * 주문 행과 아웃박스 행을 <b>한 트랜잭션</b>에 넣는다. OR-01 규칙 1번.
  *
+ * <p>주문 행, 상태 기록, 아웃박스 행 셋이 같은 트랜잭션에 들어간다.
+ *
  * <p>이 클래스를 따로 뺀 이유는 트랜잭션 경계를 좁게 잡으려는 것이다. 멱등키를 다루는 레디스
  * 왕복까지 트랜잭션 안에 들어가면, 레디스가 느려진 만큼 DB 커넥션과 락을 붙잡고 있게 된다.
  * DB 에 닿는 일만 여기 모아두고 바깥에서 부른다.
@@ -25,10 +27,13 @@ public class OrderWriter {
 
     private final OrderRepository orderRepository;
     private final OutboxAppender outboxAppender;
+    private final OrderStatusRecorder statusRecorder;
 
     @Transactional
     public Order write(Order order) {
         Order saved = orderRepository.save(order);
+        // timeline 의 첫 줄. 여기서 안 남기면 OR-02 응답의 timeline 이 빈 채로 나간다.
+        statusRecorder.record(saved.getOrderId(), saved.getStatus(), saved.getCreatedAt());
         outboxAppender.append(
                 KafkaTopics.ORDER_CREATED,
                 saved.getOrderId(),
