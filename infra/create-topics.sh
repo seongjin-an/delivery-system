@@ -50,9 +50,17 @@ create delivery.completed  6 1 retention.ms=604800000
 
 # ── DLT (Spring Kafka 규약: 원본토픽 + ".DLT") ──────────────────────────────
 # 재시도 소진분이 여기 쌓인다. 자동 생성이 꺼져 있으니 미리 만들어둬야 한다.
+#
+# 파티션이 원본(6개)보다 적은 3개인 건 일부러 그렇게 뒀다. 여기 쌓일 양이 적기도 하고,
+# 공통 에러 핸들러가 DLT 목적지 파티션을 -1(카프카가 알아서 고름)로 넘기기 때문에
+# 원본과 개수가 달라도 상관없다. 기본값처럼 원본 파티션 번호를 그대로 쓰면
+# 4~6번 파티션에서 실패한 레코드가 DLT 에 없는 파티션을 찾다가 발행부터 실패한다.
 create rider.location.DLT      3 1
 create order.created.DLT       3 1
 create delivery.completed.DLT  3 1
+# order-api 가 OR-07 로 이 둘을 소비한다. 소비하는 토픽에는 DLT 가 있어야 한다.
+create dispatch.assigned.DLT   3 1
+create dispatch.failed.DLT     3 1
 
 echo "[create-topics] 완료. 현재 토픽:"
 docker exec "$CONTAINER" $KT --bootstrap-server "$BOOTSTRAP" --list 2>/dev/null \

@@ -1,1 +1,2 @@
 com.delivery.common.autoconfigure.CommonWebAutoConfiguration
+com.delivery.common.autoconfigure.CommonKafkaAutoConfiguration
