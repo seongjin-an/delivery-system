@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -17,8 +18,13 @@ import org.springframework.stereotype.Component;
  *
  * <p>fixedDelay 를 쓴다. fixedRate 로 하면 한 번이 200ms 를 넘겼을 때 다음 실행이 바로 겹쳐서
  * 밀린 만큼 계속 몰아친다. fixedDelay 는 "끝나고 나서 200ms" 라 그럴 일이 없다.
+ *
+ * <p><b>기본값은 이제 CDC 라서 이 빈은 안 만들어진다.</b> Debezium 이 binlog 에서 직접 읽어가기
+ * 때문이다. 지우지 않고 남겨둔 이유는 두 방식을 같은 조건에서 재보려는 것이다 —
+ * {@code delivery.outbox.mode=POLLER} 로 띄우면 이쪽이 다시 돈다.
  */
 @Component
+@ConditionalOnProperty(name = "delivery.outbox.mode", havingValue = "POLLER")
 @RequiredArgsConstructor
 public class OutboxPoller {
 
