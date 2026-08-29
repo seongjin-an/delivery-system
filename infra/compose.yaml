@@ -87,6 +87,44 @@ services:
       timeout: 10s
       retries: 10
 
+  # ── Debezium (CDC) ────────────────────────────────────────────────────────
+  # 아웃박스 테이블의 INSERT 를 MySQL binlog 에서 직접 읽어 카프카로 보낸다.
+  # 앱의 폴러가 하던 일을 대신하는 것이라, 이게 안 떠 있으면 이벤트가 한 건도 안 나간다.
+  #
+  # 카프카 커넥트는 자기 상태(커넥터 설정, 오프셋, 상태)를 카프카 토픽에 저장한다.
+  # 그래서 컨테이너를 다시 띄워도 읽던 binlog 위치부터 이어서 읽는다.
+  connect:
+    image: quay.io/debezium/connect:2.7.3.Final
+    container_name: delivery-connect
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+    ports:
+      - "8083:8083"
+    environment:
+      BOOTSTRAP_SERVERS: kafka:29092
+      GROUP_ID: delivery-connect
+      CONFIG_STORAGE_TOPIC: connect_configs
+      OFFSET_STORAGE_TOPIC: connect_offsets
+      STATUS_STORAGE_TOPIC: connect_statuses
+      # 이 세 토픽은 커넥트가 자기 상태를 넣는 곳이라 파티션 1 + 압축이어야 한다.
+      # 브로커의 auto-create 를 꺼놨으므로 커넥트가 직접 만들게 복제 계수를 알려준다.
+      CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      STATUS_STORAGE_REPLICATION_FACTOR: 1
+      # 아웃박스 payload 가 이미 JSON 문자열이다. 커넥트가 거기에 스키마를 덧씌우면
+      # 우리 컨슈머가 읽던 모양과 달라져서, 그대로 흘려보내는 StringConverter 를 쓴다.
+      KEY_CONVERTER: org.apache.kafka.connect.storage.StringConverter
+      VALUE_CONVERTER: org.apache.kafka.connect.storage.StringConverter
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -sf http://localhost:8083/connectors || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
     container_name: delivery-kafka-ui
