@@ -9,9 +9,9 @@ import java.time.Instant;
  * 나중에 대시보드 지표로도 쓴다.
  */
 public record DispatchOffer(
-        String offerId,
-        String orderId,
-        String riderId,
+        long offerId,
+        long orderId,
+        long riderId,
         int attempt,
         Instant offeredAt
 ) {

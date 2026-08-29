@@ -91,8 +91,17 @@ OFFLINE ◀──▶ IDLE ──▶ OFFERED ──▶ DELIVERING ──▶ IDLE
 
 ## 3.1 식별자
 
-`orderId`, `riderId`, `offerId` 는 모두 UUIDv7 문자열이다. `libs/common` 의 `uuid-creator` 를 쓴다.
-시간순으로 정렬되는 UUID 라서 로그를 볼 때 순서가 눈에 보인다.
+`orderId`, `riderId`, `offerId` 는 모두 **TSID** 다. `libs/common` 의 `Ids.newId()` 로 만든다.
+64비트 정수라 DB 에는 `BIGINT`, JSON 에는 숫자, 레디스 키와 카프카 키에는 십진수 문자열로 나간다.
+DB 에 보이는 값과 로그에 찍히는 값과 레디스 키에 박힌 값이 전부 같은 숫자라야 장애 났을 때 눈으로 따라갈 수 있다.
+
+앞쪽 42비트가 밀리초 타임스탬프라 숫자 크기가 곧 만들어진 순서다.
+DB 의 `AUTO_INCREMENT` 를 안 쓰는 이유는 이 아이디가 DB 에 들어가기 전에 이미 필요해서다 —
+카프카 파티션 키로, 레디스 키로, 래빗엠큐 메시지 안으로 그대로 흘러다닌다.
+
+인스턴스를 여러 대 띄울 때는 각자 다른 노드 번호를 줘야 한다.
+`-Dtsidcreator.node=N` 으로 주고, `scripts/_common.sh` 가 포트에서 뽑아 넣는다.
+
 문서 안의 예시에서는 읽기 좋게 `order-77`, `R1` 처럼 줄여 쓴다.
 
 ## 3.2 시간
@@ -202,7 +211,7 @@ WGS84 위경도, 소수점 여섯 자리까지. 한국 밖 좌표는 받지 않�
 응답
 
 ```json
-{ "success": true, "data": { "orderId": "0192f3...", "status": "CREATED", "zoneId": "Z3749_12702" } }
+{ "success": true, "data": { "orderId": 558668931353510983, "status": "CREATED", "zoneId": "Z3749_12702" } }
 ```
 
 **규칙**
@@ -238,9 +247,9 @@ WGS84 위경도, 소수점 여섯 자리까지. 한국 밖 좌표는 받지 않�
 {
   "success": true,
   "data": {
-    "orderId": "0192f3...",
+    "orderId": 558668931353510983,
     "status": "ASSIGNED",
-    "riderId": "0192a1...",
+    "riderId": 558668931353510984,
     "attempt": 2,
     "timeline": [
       { "status": "CREATED",     "at": "2026-08-23T04:12:33.482Z" },

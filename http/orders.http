@@ -1,0 +1,85 @@
+### OR-01 주문 생성 — 정상
+# 강남역 근처 가게에서 삼성역 근처로. 응답의 zoneId 는 서버가 가게 좌표로 계산한 값이다.
+POST {{orderApi}}/api/orders
+Content-Type: application/json
+Idempotency-Key: demo-key-001
+
+{
+  "storeId": "store-001",
+  "storeLat": 37.498095,
+  "storeLng": 127.027610,
+  "destLat": 37.504198,
+  "destLng": 127.048985,
+  "priceKrw": 18000
+}
+
+### 같은 멱등키로 한 번 더 — 201 이 아니라 200 이고 orderId 가 같아야 한다
+# 새 주문이 안 생기는지는 DB 에서 확인한다:
+#   docker exec delivery-mysql mysql -udev_user -pdev_password delivery -e "SELECT COUNT(*) FROM orders"
+POST {{orderApi}}/api/orders
+Content-Type: application/json
+Idempotency-Key: demo-key-001
+
+{
+  "storeId": "store-001",
+  "storeLat": 37.498095,
+  "storeLng": 127.027610,
+  "destLat": 37.504198,
+  "destLng": 127.048985,
+  "priceKrw": 18000
+}
+
+### 멱등키 헤더를 빼면 — 400 MISSING_IDEMPOTENCY_KEY
+POST {{orderApi}}/api/orders
+Content-Type: application/json
+
+{
+  "storeId": "store-001",
+  "storeLat": 37.498095,
+  "storeLng": 127.027610,
+  "destLat": 37.504198,
+  "destLng": 127.048985,
+  "priceKrw": 18000
+}
+
+### 한국 밖 좌표 (도쿄) — 400 INVALID_COORDINATE
+POST {{orderApi}}/api/orders
+Content-Type: application/json
+Idempotency-Key: demo-key-tokyo
+
+{
+  "storeId": "store-001",
+  "storeLat": 35.681200,
+  "storeLng": 139.767100,
+  "destLat": 37.504198,
+  "destLng": 127.048985,
+  "priceKrw": 18000
+}
+
+### 가게에서 목적지가 20km 넘게 멀 때 (강남 → 강릉) — 400 INVALID_REQUEST
+POST {{orderApi}}/api/orders
+Content-Type: application/json
+Idempotency-Key: demo-key-far
+
+{
+  "storeId": "store-001",
+  "storeLat": 37.498095,
+  "storeLng": 127.027610,
+  "destLat": 37.751900,
+  "destLng": 128.876100,
+  "priceKrw": 18000
+}
+
+### 금액이 0 — 400 INVALID_REQUEST (본문 검증)
+POST {{orderApi}}/api/orders
+Content-Type: application/json
+Idempotency-Key: demo-key-price
+
+{
+  "storeId": "store-001",
+  "storeLat": 37.498095,
+  "storeLng": 127.027610,
+  "destLat": 37.504198,
+  "destLng": 127.048985,
+  "priceKrw": 0
+}
