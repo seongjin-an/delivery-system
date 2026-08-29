@@ -112,9 +112,16 @@ start_spring() {
     )
   fi
 
-  info "$label 기동 ..."
+  # TSID 노드 번호. 인스턴스마다 달라야 같은 밀리초에 같은 아이디가 안 나온다.
+  # 안 주면 라이브러리가 무작위로 고르는데, scale.sh 로 인스턴스를 늘렸다 줄였다 하다 보면
+  # 언젠가 두 대가 같은 번호를 뽑는다. 포트가 이미 인스턴스마다 다르니 거기서 뽑아 쓴다.
+  # (8090~8097, 8190~8197, 8290~8297 을 1024 로 나눈 나머지는 서로 안 겹친다)
+  local tsid_node=$(( port % 1024 ))
+
+  info "$label 기동 (tsid node=$tsid_node) ..."
   # 빈 배열 전개는 macOS bash 3.2 + set -u 에서 죽는다 (에이전트 다운로드 실패 시 재현)
-  SERVER_PORT="$port" "$JAVA_CMD" ${opts[@]+"${opts[@]}"} -jar "$jar" > "$LOGS/$label.log" 2>&1 &
+  SERVER_PORT="$port" "$JAVA_CMD" -Dtsidcreator.node="$tsid_node" \
+    ${opts[@]+"${opts[@]}"} -jar "$jar" > "$LOGS/$label.log" 2>&1 &
   echo $! > "$PIDS/$label.pid"
   wait_port "$label" "$port" 90
 }
