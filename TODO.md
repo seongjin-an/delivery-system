@@ -55,10 +55,24 @@
 >   8장(수락 CAS), 11장(하나씩 빼먹으면 어떻게 깨지는지)
 
 ### 공통 (COM)
-- [ ] `libs/common` 에 `RedisKeys.ridersHeartbeat` 추가 — 오프라인 정리용 ZSET 인덱스
-- [ ] 좌표 검증 유틸 (한국 범위) + `zoneId` 계산 유틸
-- [ ] `GlobalExceptionHandler` — 기능 정의서 3.6 의 에러 코드 표대로
-- [ ] 컨슈머 공통 에러 핸들러 — `BusinessException` 은 즉시 DLT, 나머지는 3회 백오프
+- [x] `libs/common` 에 `RedisKeys.ridersHeartbeat` 추가 — 오프라인 정리용 ZSET 인덱스
+- [x] 좌표 검증 유틸 (한국 범위) + `zoneId` 계산 유틸 — `common.geo.Coordinates` / `Zones`
+- [x] `GlobalExceptionHandler` — 기능 정의서 3.6 의 에러 코드 표대로 (`ErrorCode` enum + `ApiResponse.code`)
+- [x] 컨슈머 공통 에러 핸들러 — `BusinessException` 은 즉시 DLT, 나머지는 3회 백오프
+
+공통에서 겪은 것
+- `common` 은 서비스 패키지(`com.delivery.orderapi` 등) 밖이라 컴포넌트 스캔에 안 걸린다.
+  서비스마다 `@Import` 를 붙이는 대신 자동설정(`META-INF/spring/...AutoConfiguration.imports`)으로 올렸다.
+- 그래서 `spring-boot-starter-web` 과 `spring-kafka` 는 `compileOnly` 로 둔다. `api` 로 걸면
+  카프카를 안 쓰는 `rider-simulator` 까지 끌고 온다. 자동설정의 `@ConditionalOnClass` 가 그걸 받아준다.
+- DLT 발행은 목적지 파티션을 `-1` 로 넘긴다. 기본값은 원본과 같은 파티션 번호인데
+  원본은 6파티션, DLT 는 3파티션이라 4~6번에서 실패한 레코드가 발행부터 실패한다.
+- `ExponentialBackOffWithMaxRetries` 는 스프링 코어에 없다. `ExponentialBackOff.setMaxAttempts()` 를 쓴다.
+- `ApiResponse` 에 `code` 를 붙였다(실패일 때만 직렬화). 시뮬레이터가 `ALREADY_TAKEN` 과
+  `OFFER_EXPIRED` 를 갈라서 다음 행동을 정해야 하는데 사람이 읽는 `message` 로는 못 가른다.
+- 첫 테스트를 돌리자마자 `OutputDirectoryProvider not available` 로 죽었다. 그래들 8.13 이 들고 있는
+  junit-platform-launcher 가 부트 3.5 BOM 의 엔진보다 낮아서다. 루트 `build.gradle.kts` 에
+  `testRuntimeOnly("org.junit.platform:junit-platform-launcher")` 를 넣어 버전을 맞췄다.
 
 ### order-api
 - [ ] `OR-01` `POST /api/orders` — 주문 생성, 멱등키 필수
