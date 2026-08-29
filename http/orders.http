@@ -83,3 +83,14 @@ Idempotency-Key: demo-key-price
   "destLng": 127.048985,
   "priceKrw": 0
 }
+
+### OR-02 주문 조회 — 위에서 만든 주문의 orderId 를 넣는다
+# timeline 은 상태가 바뀔 때마다 한 줄씩 늘어난다. 지금은 CREATED 한 줄만 있다.
+# attempt 는 몇 번째 후보에서 잡혔는지인데 OR-07 이 채우기 전까지 0 이다.
+GET {{orderApi}}/api/orders/881527393955193619
+
+### 없는 주문 — 404 ORDER_NOT_FOUND
+GET {{orderApi}}/api/orders/999999999999999999
+
+### 숫자가 아닌 아이디 — 400 INVALID_REQUEST (스프링 타입 변환에서 걸린다)
+GET {{orderApi}}/api/orders/not-a-number
