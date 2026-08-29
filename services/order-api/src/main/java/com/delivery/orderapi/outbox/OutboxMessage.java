@@ -86,4 +86,25 @@ public class OutboxMessage {
                                         String partitionKey, String payload, Instant now) {
         return new OutboxMessage(aggregateId, destinationTopic, partitionKey, payload, now);
     }
+
+    /** 카프카가 받았다고 확인해준 뒤에만 부른다. 이걸 채우면 폴러가 다시 안 집어간다 */
+    public void markPublished(Instant publishedAt) {
+        this.publishedAt = publishedAt;
+        this.attemptCount++;
+    }
+
+    /**
+     * 발행이 안 됐다. published_at 은 그대로 두니까 다음 주기에 다시 집어간다.
+     *
+     * <p>여기서 포기하지 않는 게 중요하다. 카프카가 잠깐 안 붙은 거면 다음 주기에 그냥 되는데,
+     * 몇 번 실패했다고 버려버리면 "DB 엔 주문이 있는데 배차가 안 걸린" 주문이 생긴다.
+     * 아웃박스를 쓰는 이유가 통째로 사라지는 셈이라, 세기만 하고 계속 다시 시도한다.
+     */
+    public void markSendFailed() {
+        this.attemptCount++;
+    }
+
+    public boolean isStuck(int threshold) {
+        return attemptCount > threshold;
+    }
 }
