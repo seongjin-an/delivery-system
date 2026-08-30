@@ -1,9 +1,11 @@
 package com.delivery.orderapi.outbox;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.Instant;
 import java.util.List;
 
 public interface OutboxRepository extends JpaRepository<OutboxMessage, Long> {
@@ -28,4 +30,14 @@ public interface OutboxRepository extends JpaRepository<OutboxMessage, Long> {
             FOR UPDATE SKIP LOCKED
             """, nativeQuery = true)
     List<OutboxMessage> lockUnpublished(@Param("batchSize") int batchSize);
+
+    /**
+     * CDC 모드에서 다 쓴 행을 치운다.
+     *
+     * <p>한 번에 다 지우지 않고 끊어서 지운다. 쌓인 게 많을 때 통째로 DELETE 하면 그 행들에
+     * 잠금이 한꺼번에 걸려서, 같은 순간에 주문을 넣는 INSERT 가 뒤에서 기다리게 된다.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = "DELETE FROM outbox WHERE created_at < :cutoff LIMIT 1000", nativeQuery = true)
+    int deleteCreatedBefore(@Param("cutoff") Instant cutoff);
 }

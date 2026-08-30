@@ -1,0 +1,46 @@
+{
+  "name": "order-outbox-connector",
+  "config": {
+    "connector.class": "io.debezium.connector.mysql.MySqlConnector",
+
+    "database.hostname": "mysql",
+    "database.port": "3306",
+    "database.user": "debezium",
+    "database.password": "debezium_password",
+
+    "//": "복제 클라이언트마다 달라야 하는 번호. MySQL 자신이 server_id=1 이라 겹치지 않게 크게 잡았다",
+    "database.server.id": "184054",
+
+    "topic.prefix": "delivery",
+    "database.include.list": "delivery",
+    "table.include.list": "delivery.outbox",
+
+    "//schema.history": "커넥터가 본 DDL 을 여기에 적어둔다. 재시작하면 이걸 읽어 테이블 모양을 복원한다",
+    "schema.history.internal.kafka.bootstrap.servers": "kafka:29092",
+    "schema.history.internal.kafka.topic": "schema-history.delivery",
+
+    "//snapshot": "처음 붙을 때 기존 행을 전부 훑지 않는다. 이미 폴러가 내보낸 것들이라 다시 보내면 중복이 된다",
+    "snapshot.mode": "schema_only",
+
+    "//schema-changes": "이걸 안 끄면 DDL 변경 이벤트를 topic.prefix 와 같은 이름의 토픽('delivery')에 쓰려고 한다. 우리는 브로커의 auto-create 를 꺼놔서 그 토픽이 없고, 커넥터가 거기서 막혀 아웃박스 이벤트가 한 건도 안 나간다",
+    "include.schema.changes": "false",
+    "schema.history.internal.store.only.captured.tables.ddl": "true",
+
+    "//transforms": "아웃박스 테이블 전용 변환. 행 하나를 이벤트 하나로 바꿔준다",
+    "transforms": "outbox",
+    "transforms.outbox.type": "io.debezium.transforms.outbox.EventRouter",
+    "transforms.outbox.table.field.event.id": "id",
+    "transforms.outbox.table.field.event.key": "aggregate_id",
+    "transforms.outbox.table.field.event.payload": "payload",
+
+    "//route": "destination_topic 컬럼 값이 곧 목적지 토픽 이름이다 (order.created 등)",
+    "transforms.outbox.route.by.field": "destination_topic",
+    "transforms.outbox.route.topic.replacement": "${routedByValue}",
+
+    "//converter": "payload 가 이미 JSON 문자열이라 그대로 흘려보낸다",
+    "key.converter": "org.apache.kafka.connect.storage.StringConverter",
+    "value.converter": "org.apache.kafka.connect.storage.StringConverter",
+
+    "tombstones.on.delete": "false"
+  }
+}
