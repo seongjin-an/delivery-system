@@ -17,10 +17,16 @@ if [[ "${SKIP_INFRA:-}" != "true" ]]; then
   wait_port "RabbitMQ"  5672  90
   wait_port "Collector" 4317  60
   wait_port "Grafana"   3001  90
+  wait_port "Connect"   8083  120
   success "인프라 준비 완료"
 
   info "카프카 토픽 생성..."
   bash "$ROOT/infra/create-topics.sh"
+
+  # 아웃박스 행을 카프카로 내보내는 게 이제 앱이 아니라 Debezium 이다.
+  # 이게 등록 안 되면 주문은 들어가는데 order.created 는 한 건도 안 나간다.
+  info "Debezium 커넥터 등록..."
+  bash "$ROOT/infra/register-debezium.sh"
 fi
 
 # ── 2. 빌드 ─────────────────────────────────────────────────────────────────

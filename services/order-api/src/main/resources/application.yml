@@ -31,9 +31,20 @@ spring:
 
 delivery:
   outbox:
-    # 아웃박스 폴러 주기. "DB엔 주문이 있는데 이벤트는 안 갔다"를 구조적으로 막는 장치.
+    # 아웃박스 행을 카프카로 내보내는 방식.
+    #   CDC    — Debezium 이 MySQL binlog 를 읽어서 보낸다 (기본값). 앱은 넣기만 한다.
+    #   POLLER — 앱이 200ms 마다 테이블을 훑어서 보낸다. 두 방식을 비교할 때 이걸로 띄운다.
+    # CDC 로 두면 infra/register-debezium.sh 로 커넥터가 등록돼 있어야 이벤트가 나간다.
+    mode: ${OUTBOX_MODE:CDC}
+
+    # POLLER 모드에서만 쓴다
     poll-interval-ms: 200
     batch-size: 100
+
+    # CDC 모드에서만 쓴다. binlog 에 적힌 순간 행은 할 일이 끝나지만,
+    # "이벤트가 들어가긴 했나" 를 눈으로 볼 창을 한 시간 남겨둔다.
+    purge-after-minutes: 60
+    purge-interval-ms: 60000
 
 management:
   endpoints:

@@ -165,6 +165,27 @@ OR-06 에서 정한 것
 - 실패해도 버리지 않는다. `attempt_count` 만 올리고 10회를 넘으면 경고를 남긴다. 몇 번 실패했다고
   포기하면 "DB 엔 주문이 있는데 배차가 안 걸린" 주문이 생겨서 아웃박스를 쓴 이유가 사라진다.
 
+Debezium CDC 로 교체하면서 (기본값이 `delivery.outbox.mode=CDC` 로 바뀌었다)
+- 지연이 평균 **297ms → 33ms** 로 줄었다 (중앙값 16ms, p95 140ms). 폴러가 느린 건 코드가
+  나빠서가 아니라 주기가 200ms 라 방금 들어온 행이 평균 100ms 를 그냥 기다려서다.
+  자세한 비교는 `.reference/tech-choice.md` 1번.
+- **커넥터가 RUNNING 인데 이벤트가 한 건도 안 나가는 걸로 한참 헤맸다.** 상태만 보면 멀쩡했는데
+  커넥트 로그에 `{delivery=UNKNOWN_TOPIC_OR_PARTITION}` 이 계속 찍히고 있었다.
+  Debezium MySQL 커넥터는 DDL 변경 이벤트를 `topic.prefix` 와 같은 이름의 토픽에 쓰는데,
+  우리는 파티션 수를 못 박으려고 브로커 auto-create 를 꺼놨으니 그 토픽이 없다.
+  `include.schema.changes=false` 로 껐다. **커넥터 상태가 RUNNING 이라고 일이 되고 있는 게 아니다.**
+- `snapshot.mode=schema_only` 다. 처음 붙을 때 기존 행을 안 읽는다. 폴러가 이미 내보낸
+  것들이라 다시 보내면 중복이 되기 때문인데, 처음부터 CDC 로 시작한다면 `initial` 이어야 한다.
+- 폴러 코드는 안 지웠다. `delivery.outbox.mode=POLLER` 로 띄우면 다시 돈다.
+  같은 조건에서 다시 재보려면 필요하고, 커넥트 없이 앱만 띄울 때도 쓸 수 있다.
+- **아웃박스 행을 치우는 일이 새로 생겼다.** 폴러 때는 `published_at` 이 기록이라 남겨뒀는데,
+  CDC 는 binlog 를 읽으므로 행은 binlog 에 적히는 순간 할 일이 끝난다. 안 치우면 계속 쌓이기만
+  한다 — 초당 200 주문이면 하루 1700만 행이다. `OutboxPurger` 가 한 시간 지난 행을 지운다.
+  바로 안 지우고 한 시간 두는 건 "이벤트가 들어가긴 했나" 를 눈으로 볼 창을 남기려는 것이다.
+- 스크립트 버그로 한 번 시간을 날렸다. 같은 셸에서 `nohup java ... &` 로 앱을 띄우고 그 뒤에
+  `curl ... & ... wait` 를 쓰면, `wait` 가 자바 프로세스까지 기다려서 영영 안 끝난다.
+  앱 기동과 부하 주기는 셸을 나눠야 한다.
+
 ### location-ingest
 - [ ] `LI-01` `POST /api/riders/{riderId}/location` → `rider.location` (key = riderId)
       *왜: 이 서비스는 상태가 하나도 없다. 그래서 확장 시나리오 A 의 기준선이 된다.*
@@ -286,6 +307,7 @@ DE-01 에서 정한 것
       같은 걸 하는 걸 보면 DB 가 그동안 뭘 공짜로 주고 있었는지 알게 된다.*
       *비교 지표: 배차 p99, 초당 처리량, 그리고 프로세스를 죽였을 때 좀비 주문 건수*
 - [ ] 결과를 `.reference/tech-choice.md` 에 표로 정리 — "왜 이 셋을 같이 쓰는지" 에 대한 답
+      (파일은 만들었다. 아웃박스 폴러 vs Debezium 비교가 1번으로 들어가 있다)
 
 ---
 
@@ -381,7 +403,7 @@ DE-01 에서 정한 것
 ## 나중에 (하고 싶어지면)
 
 - [ ] 카프카 스트림즈로 존별 실시간 수급 집계 (라이더 대비 주문 비율)
-- [ ] 아웃박스 폴러를 Debezium CDC 로 교체 ← **바로 다음에 할 것.** 폴러 기준선(평균 297ms)과 비교한다
+- [x] 아웃박스 폴러를 Debezium CDC 로 교체 — 결과는 [`.reference/tech-choice.md`](.reference/tech-choice.md) 1번
 - [ ] Redisson 분산락 vs 직접 만든 `SET NX PX` 비교
 - [ ] 쿠버네티스로 옮기고 HPA/KEDA 를 제대로
 - [ ] 트랜잭셔널 프로듀서(exactly-once) 실험 — 얼마나 느려지는지 재본다
