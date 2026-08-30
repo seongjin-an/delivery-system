@@ -3,9 +3,10 @@ package com.delivery.common;
 /**
  * 래빗엠큐 익스체인지 / 큐 / 라우팅키 이름.
  *
- * <p>실제 선언(declare)은 offer-relay 의 RabbitTopologyConfig 가 한다. 여기는 이름만 모아둔 곳.
- * dispatch-engine 은 발행만 하므로 익스체인지 이름만 알면 되고, 큐가 없으면 메시지가 조용히
- * 버려지니 offer-relay 를 먼저 띄우는 게 안전하다.
+ * <p>여기는 이름만 모아둔 곳이고, 실제 선언(declare)은 common.rabbit.RabbitTopologyConfig 가 한다.
+ * 래빗엠큐를 쓰는 서비스면 자동설정으로 다 같이 선언하게 해뒀다 — 선언이 멱등이라 겹쳐도
+ * 괜찮고, 그래야 어느 서비스를 먼저 띄우든 큐가 준비돼 있다.
+ * (큐가 없는데 발행하면 메시지가 에러도 없이 그냥 사라진다)
  */
 public final class RabbitTopology {
 
