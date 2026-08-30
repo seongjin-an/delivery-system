@@ -21,9 +21,11 @@ dependencies {
     // 클래스가 실제로 있는 서비스에서만 켜진다.
     compileOnly("org.springframework.boot:spring-boot-starter-web")
     compileOnly("org.springframework.kafka:spring-kafka")
+    compileOnly("org.springframework.boot:spring-boot-starter-amqp")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     // compileOnly 는 테스트 클래스패스로 안 넘어온다. 자동설정이 실제로 켜지는지 보려면 여기서 다시 걸어줘야 한다.
     testImplementation("org.springframework.boot:spring-boot-starter-web")
     testImplementation("org.springframework.kafka:spring-kafka")
+    testImplementation("org.springframework.boot:spring-boot-starter-amqp")
 }

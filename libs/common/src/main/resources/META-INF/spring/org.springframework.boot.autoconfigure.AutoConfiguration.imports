@@ -1,2 +1,3 @@
 com.delivery.common.autoconfigure.CommonWebAutoConfiguration
 com.delivery.common.autoconfigure.CommonKafkaAutoConfiguration
+com.delivery.common.autoconfigure.CommonRabbitAutoConfiguration
