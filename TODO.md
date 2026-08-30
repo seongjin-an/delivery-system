@@ -253,6 +253,10 @@ Debezium CDC 로 교체하면서 (기본값이 `delivery.outbox.mode=CDC` 로 �
       이 구조가 6단계 리플레이 멱등성의 핵심이다*
 - [ ] `SE-02` `GET /api/settlements`
 
+> DE-01~03 을 만들면서 정리한 문서 두 개
+> - [`.reference/dispatch-implementation.md`](.reference/dispatch-implementation.md) — 만들어보니 이랬다 (설계와 달라진 부분, 실측값)
+> - [`.reference/rabbitmq-timer.md`](.reference/rabbitmq-timer.md) — 10초 타이머가 실제로 어떻게 도는지
+
 DE-01 에서 확인한 것
 - 라이더 4명을 레디스에 직접 심고(geo-indexer 가 아직 없어서) 주문 하나를 넣었더니
   `dispatch.offer.timer` 와 `dispatch.offer.notify` 에 **각각 1건씩** 들어갔다.
