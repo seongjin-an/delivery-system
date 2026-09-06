@@ -1,0 +1,75 @@
+### DE-04 제안 수락
+#
+# offerId 는 눈으로 주워와야 한다. 아직 라이더 앱이 없어서 제안이 어디로 갔는지 알려주는
+# 화면이 없다. 두 군데 중 편한 데서 본다.
+#
+#   1) dispatch-engine 로그 — "제안 발송: orderId=.. riderId=.. offerId=.. attempt=.."
+#      tail -f logs/dispatch-engine.log | grep '제안 발송'
+#
+#   2) 알림 큐를 직접 열어본다 (꺼내면 알림 워커 몫이 없어지니 확인용으로만)
+#      curl -u dev_user:dev_password -H 'content-type:application/json' \
+#        -d '{"count":1,"ackmode":"ack_requeue_true","encoding":"auto"}' \
+#        http://localhost:15672/api/queues/%2F/dispatch.offer.notify/get
+#
+# 제안은 10초짜리다. 느긋하게 복사해 붙이면 그 사이에 만료돼서 410 이 온다.
+# 급하면 타이머를 늘려두고 실험한다 (RabbitTopologyConfig 의 ttl).
+
+### 정상 수락 — 200
+# 응답의 orderId 를 챙겨둔다. 다음에 부를 픽업(OR-03)과 완료(OR-04)는 offerId 가 아니라
+# orderId 로 부른다.
+POST {{dispatchEngine}}/api/offers/{{offerId}}/accept
+Content-Type: application/json
+
+{
+  "riderId": {{riderId}}
+}
+
+### 같은 제안을 두 번 수락 — 409 ALREADY_TAKEN
+# 라이더가 버튼을 두 번 눌렀거나 앱이 재전송한 경우다. 두 번째가 성공하면 안 된다.
+POST {{dispatchEngine}}/api/offers/{{offerId}}/accept
+Content-Type: application/json
+
+{
+  "riderId": {{riderId}}
+}
+
+### 남의 제안을 수락 — 403 NOT_YOUR_OFFER
+# riderId 를 아무 숫자로 바꿔서 부른다. 인증이 없으니 이 값이 곧 신원이다.
+POST {{dispatchEngine}}/api/offers/{{offerId}}/accept
+Content-Type: application/json
+
+{
+  "riderId": 999999999999999999
+}
+
+### 10초를 넘기고 수락 — 410 OFFER_EXPIRED
+# 제안을 받고 그냥 기다렸다가 부른다. offer-relay 가 아직 없어서 지금은 만료돼도
+# 2순위로 안 넘어가고 그냥 멈춘다 (RE-02 몫).
+POST {{dispatchEngine}}/api/offers/{{offerId}}/accept
+Content-Type: application/json
+
+{
+  "riderId": {{riderId}}
+}
+
+### 없는 offerId — 410 OFFER_EXPIRED
+# 인덱스(dispatch:offer:by-id:*)가 TTL 10분을 넘겼거나 아예 없던 값이다.
+# 라이더에게는 둘 다 "만료됐어요" 로 보인다. 404 를 따로 두면 앱이 할 일이 없다.
+POST {{dispatchEngine}}/api/offers/1/accept
+Content-Type: application/json
+
+{
+  "riderId": {{riderId}}
+}
+
+### 수락 뒤 확인 — 주문이 ASSIGNED 이고 riderId 가 붙어 있어야 한다
+# order-api 가 dispatch.assigned 를 아직 안 먹는다(OR-07). 그래서 지금은 여기가
+# DISPATCHING 그대로다. 카프카에 이벤트가 나갔는지는 아래로 본다.
+#   docker exec delivery-kafka kafka-console-consumer.sh --bootstrap-server localhost:9092 \
+#     --topic dispatch.assigned --from-beginning --max-messages 1
+GET {{orderApi}}/api/orders/{{orderId}}
+
+### 레디스에서 직접 확인 — state 가 ACCEPTED, 라이더가 DELIVERING
+#   docker exec delivery-redis redis-cli HGETALL dispatch:offer:{orderId}
+#   docker exec delivery-redis redis-cli HGETALL rider:state:{riderId}
+#   docker exec delivery-redis redis-cli GET lock:rider:{riderId}   ← 안 지워져 있어야 정상

@@ -31,6 +31,27 @@ public class DispatchEventPublisher {
                 "at", Times.now().toString()));
     }
 
+    /**
+     * 라이더가 수락했다 (DE-04).
+     *
+     * <p>토픽 두 개에 나눠 보낸다. {@code dispatch.assigned} 는 "배차가 이렇게 끝났다" 는
+     * 사실이고 정산·지표가 이걸 본다. {@code order.status} 는 주문 상태 흐름이라 order-api 가
+     * 픽업·완료와 같은 줄에 놓고 읽는다. 한 토픽에 몰면 정산이 픽업 이벤트까지 걸러내야 한다.
+     */
+    public void publishAssigned(long orderId, long riderId, long offerId, int attempt) {
+        publish(KafkaTopics.DISPATCH_ASSIGNED, orderId, Map.of(
+                "orderId", orderId,
+                "riderId", riderId,
+                "offerId", offerId,
+                "attempt", attempt,
+                "at", Times.now().toString()));
+        publish(KafkaTopics.ORDER_STATUS, orderId, Map.of(
+                "orderId", orderId,
+                "riderId", riderId,
+                "status", "ASSIGNED",
+                "at", Times.now().toString()));
+    }
+
     /** 후보를 다 썼는데 아무도 안 받았다 */
     public void publishFailed(long orderId, String reason) {
         publish(KafkaTopics.DISPATCH_FAILED, orderId, Map.of(

@@ -93,7 +93,7 @@ public class OfferSender {
         if (!confirmed(confirm, orderId, riderId)) {
             // 브로커가 못 받았다. 되돌려놓고 다음 후보로 간다. 안 되돌리면 보드에 OFFERED 가
             // 남아서, 아무한테도 안 간 제안을 다음 시도가 "진행 중" 으로 오해한다.
-            offerBoard.clear(orderId);
+            offerBoard.clear(orderId, offerId);
             redis.opsForHash().put(
                     RedisKeys.riderState(riderId), RiderStateFields.STATUS, RiderStatus.IDLE.name());
             return null;
