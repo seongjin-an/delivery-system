@@ -40,6 +40,22 @@ public final class RedisKeys {
         return "dispatch:offer:" + orderId;
     }
 
+    /**
+     * offerId → orderId 역인덱스.
+     *
+     * <p>제안 보드는 orderId 로 열쇠를 잡는데, 라이더가 수락할 때 들고 오는 건 offerId 하나뿐이다
+     * (푸시에 실려간 게 그거고, URL 도 {@code /api/offers/{offerId}/accept} 다).
+     * 그래서 offerId 로 orderId 를 되찾을 자리가 하나 필요하다.
+     *
+     * <p>{@code lock:rider:{riderId}} 값이 orderId 라서 그걸 대신 볼 수도 있는데, 그러면
+     * 하필 제일 중요한 경우에 틀린 답이 나온다. 라이더 찜은 12초 뒤 풀리고, 그 사이 다른 주문이
+     * 같은 라이더를 잡으면 값이 새 orderId 로 바뀐다. 만료된 제안을 뒤늦게 수락한 라이더에게
+     * "만료됐어요" 대신 엉뚱한 주문의 판정을 돌려주게 된다.
+     */
+    public static String offerIndex(long offerId) {
+        return "dispatch:offer:by-id:" + offerId;
+    }
+
     /** 배차 락 — SET NX PX. 같은 주문을 두 인스턴스가 동시에 배차하는 걸 막는다 */
     public static String dispatchLock(long orderId) {
         return "lock:dispatch:" + orderId;

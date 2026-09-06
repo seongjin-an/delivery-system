@@ -18,6 +18,8 @@ public final class OfferFields {
     public static final String ATTEMPT = "attempt";
     /** 제안을 보낸 시각 (epoch ms) */
     public static final String OFFERED_AT = "offeredAt";
+    /** 라이더가 수락한 시각 (epoch ms). 수락 Lua 가 state 와 같이 쓴다 (DE-04) */
+    public static final String ACCEPTED_AT = "acceptedAt";
 
     private OfferFields() {
     }

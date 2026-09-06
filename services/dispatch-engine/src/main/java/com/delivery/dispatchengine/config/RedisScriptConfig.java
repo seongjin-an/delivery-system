@@ -17,8 +17,19 @@ public class RedisScriptConfig {
 
     @Bean
     public RedisScript<Long> releaseLockScript() {
+        return load("lua/release-lock.lua");
+    }
+
+    /** DE-04 수락 판정. 반환값 4가지를 그대로 HTTP 응답으로 가른다 */
+    @Bean
+    public RedisScript<Long> acceptOfferScript() {
+        return load("lua/accept-offer.lua");
+    }
+
+    private static RedisScript<Long> load(String path) {
         DefaultRedisScript<Long> script = new DefaultRedisScript<>();
-        script.setLocation(new ClassPathResource("lua/release-lock.lua"));
+        script.setLocation(new ClassPathResource(path));
+        // Long 으로 안 잡으면 반환값이 Integer 로 와서 -1 과 -2 를 가르는 switch 가 조용히 안 맞는다.
         script.setResultType(Long.class);
         return script;
     }

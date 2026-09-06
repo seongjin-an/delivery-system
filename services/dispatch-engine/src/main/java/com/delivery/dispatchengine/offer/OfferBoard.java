@@ -6,6 +6,7 @@ import com.delivery.common.dispatch.OfferState;
 import com.delivery.dispatchengine.config.DispatchProperties;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -29,6 +30,7 @@ import java.util.Map;
 public class OfferBoard {
 
     private final StringRedisTemplate redis;
+    private final RedisScript<Long> acceptOfferScript;
     private final DispatchProperties properties;
 
     /** @return 없으면 null (= 처음 보는 주문) */
@@ -59,6 +61,32 @@ public class OfferBoard {
         // TTL 을 빼먹으면 배차가 끝난 뒤에도 영영 남는다. 지우는 코드가 안 도는 경로가 너무 많아서
         // (프로세스 죽음, 예외, 발행 실패) 지우는 쪽이 아니라 만료 쪽에 기댄다.
         redis.expire(key, properties.stateTtl());
+
+        // 라이더는 offerId 만 들고 수락하러 온다. 보드와 같은 TTL 을 준다 —
+        // 인덱스가 먼저 사라지면 보드는 멀쩡한데 찾을 길이 없어서 404 도 410 도 아닌 게 된다.
+        redis.opsForValue().set(
+                RedisKeys.offerIndex(offerId), Long.toString(orderId), properties.stateTtl());
+    }
+
+    /** @return 없으면 null. 인덱스 TTL 이 지났거나 아예 없던 offerId 다 */
+    public Long findOrderId(long offerId) {
+        String orderId = redis.opsForValue().get(RedisKeys.offerIndex(offerId));
+        return orderId == null ? null : Long.valueOf(orderId);
+    }
+
+    /**
+     * DE-04 수락 판정. Lua 한 번으로 읽고 비교하고 쓴다.
+     *
+     * <p>왜 Lua 냐면, 라이더가 9.9초에 수락하고 10.0초에 타이머가 만료되는 순간이 실제로 있어서다.
+     * 자바에서 읽고 쓰면 둘 다 {@code OFFERED} 를 읽고 각자 자기 값을 써서, 나중에 쓴 쪽이 이긴다.
+     * 라이더 화면엔 "배차 완료" 가 뜨는데 주문은 2순위에게 넘어가 있다.
+     */
+    public AcceptResult accept(long orderId, long offerId, long riderId, long acceptedAt) {
+        Long returned = redis.execute(
+                acceptOfferScript,
+                List.of(RedisKeys.offer(orderId)),
+                Long.toString(offerId), Long.toString(riderId), Long.toString(acceptedAt));
+        return AcceptResult.of(returned);
     }
 
     public void writeState(long orderId, OfferState state) {
@@ -68,8 +96,8 @@ public class OfferBoard {
     }
 
     /** 발행이 실패했을 때 되돌린다. 보드에 OFFERED 가 남아 있으면 다음 시도가 좀비로 오해한다 */
-    public void clear(long orderId) {
-        redis.delete(RedisKeys.offer(orderId));
+    public void clear(long orderId, long offerId) {
+        redis.delete(List.of(RedisKeys.offer(orderId), RedisKeys.offerIndex(offerId)));
     }
 
     private static String text(Object value) {
