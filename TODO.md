@@ -218,7 +218,9 @@ LI-01 에서 확인한 것 (카프카, 레디스, location-ingest, geo-indexer �
 - 첫 좌표, 제자리 재전송, 9m 이동, 20m 이동을 보냈더니 토픽 오프셋이 39 → 41 로 2건만 늘었다.
   레디스에는 마지막 점(20m 이동, lat 37.498275)이 `IDLE` 로 들어갔다. HTTP → 카프카 → 레디스가 이어졌다.
 - 한 자리에 서서 3초마다 5번(0~12초) 보냈더니 발행은 2건이었다. 첫 발행 하나랑 12초째 KEEPALIVE 하나.
-- 1시간 뒤 `sentAt` 을 보냈더니 `lastSeenAt` 이 서버 시각으로 덮였고 `location_ingest_future_sent_at_total` 이 1 올랐다.
+- 1시간 뒤 `sentAt` 을 보냈더니 `location_ingest_future_sent_at_total` 이 1 올랐다. (레디스의 `lastSeenAt` 은
+  처음부터 geo-indexer 가 받은 시각이라 이걸로는 확인이 안 된다. 덮어쓴 값 자체는 `LocationIngestServiceTest` 가 본다.
+  지금은 `sentAt` 을 읽는 곳이 없고, 3단계에서 위치 지연을 잴 때 음수가 안 나오게 하려는 것이다)
 - 범위 밖 좌표는 `400 INVALID_COORDINATE`, 발행 안 함.
 - 응답 시간은 카프카가 정상일 때 3~20ms 였다 (기동 직후 첫 요청만 0.6초).
 
