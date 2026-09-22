@@ -199,11 +199,24 @@ STOP_INFRA=true ./scripts/stop.sh   # 전부 종료
 |---|---|---|
 | `dispatch.x` | `dispatch.offer.timer` | TTL 10s + DLX, **컨슈머 없음** (알람시계) |
 | `dispatch.x` | `dispatch.offer.notify` | 푸시 발송용 |
-| `dispatch.dlx` | `dispatch.offer.expired` | offer-relay 가 소비 → 재제안 |
+| `dispatch.dlx` | `dispatch.offer.expired` | offer-relay 가 소비 → 재제안. 자신도 DLX 를 건다 |
+| `dispatch.dlx` | `dispatch.offer.expired.dlq` | 재제안을 3회 재시도해도 실패한 것 |
 | `notify.x` | `notify.push` | `x-max-priority=10` (배차 제안 9, 마케팅 1) |
 | `notify.dlx` | `notify.push.dlq` | 재시도 소진분 |
 
-이름은 `libs/common` 의 `RabbitTopology` 에 모아뒀고, 실제 선언은 1단계에서 `offer-relay` 가 한다.
+이름은 `libs/common` 의 `RabbitTopology` 에 모아뒀고, 선언도 같은 모듈의 `RabbitTopologyConfig`
+가 자동설정으로 한다. 기능 정의서에는 `offer-relay` 가 선언한다고 돼 있는데, 그러면
+`dispatch-engine` 이 먼저 뜰 때 큐가 없어서 제안이 에러도 없이 사라진다.
+
+만료 큐에까지 DLX 를 건 이유는 그냥 버리면 그 주문이 재제안을 영영 못 받아서다. 보드에는
+`EXPIRED` 가 남고 타이머는 이미 없으니 아무도 다시 안 건드린다. 손님 화면에는 "배차 중" 이
+계속 떠 있고 그걸 알아챌 사람이 없다.
+
+> **이미 있는 큐에 인자를 새로 붙이면 선언이 거절된다.** 위의 DLX 를 추가했을 때 실제로 겪었다.
+> 브로커가 `PRECONDITION_FAILED` 를 내는데 **앱은 멀쩡히 뜬다.** 채널만 닫히고 그 큐에 리스너가
+> 안 붙어서, 겉보기엔 정상인데 만료 제안이 한 건도 처리되지 않는다.
+> 확인은 `rabbitmqctl list_queues name messages consumers` 로 하고, 만료 큐의 `consumers` 가
+> 0이면 큐를 지우고 다시 띄운다 (인자는 나중에 못 바꾼다).
 
 ## 레디스 키
 

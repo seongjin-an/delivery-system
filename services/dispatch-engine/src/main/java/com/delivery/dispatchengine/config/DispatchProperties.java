@@ -6,6 +6,10 @@ import java.time.Duration;
 
 /**
  * 배차 손잡이들. 부하를 걸어보고 조정할 값이라 설정으로 뺐다.
+ *
+ * <p>여기 있는 건 <b>후보를 고르는 규칙</b>뿐이다. 락 TTL 처럼 offer-relay 와 반드시 같아야 하는
+ * 값은 {@code common.dispatch.OfferProperties} 로 옮겼다. 양쪽에 따로 적어두면 한쪽만 고치는
+ * 날이 온다.
  */
 @ConfigurationProperties(prefix = "delivery.dispatch")
 public record DispatchProperties(
@@ -24,15 +28,6 @@ public record DispatchProperties(
 
         /* 대기 보너스 상한(분). 10분 넘게 기다린 라이더는 1km 정도 더 멀어도 이긴다 */
         int waitBonusCapMinutes,
-
-        /* 배차 리스 유지 시간. 프로세스가 죽어도 이만큼 뒤엔 알아서 풀리라는 안전장치다 */
-        Duration lockTtl,
-
-        /* 라이더 찜 유지 시간. 제안 TTL 10초에 2초를 얹은 값 */
-        Duration riderLockTtl,
-
-        /* 후보 목록과 제안 보드의 TTL. 지우는 코드가 안 도는 경로가 너무 많아서 반드시 붙인다 */
-        Duration stateTtl,
 
         /*
          * OFFERED 인데 이만큼 지났으면 좀비로 본다.

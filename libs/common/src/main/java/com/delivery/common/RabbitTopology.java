@@ -18,6 +18,8 @@ public final class RabbitTopology {
 
     public static final String RK_OFFER_CREATED = "offer.created";
     public static final String RK_OFFER_EXPIRED = "offer.expired";
+    /** 재제안을 세 번 시도해도 실패했을 때 (RE-02) */
+    public static final String RK_OFFER_DEAD = "offer.dead";
 
     /**
      * 컨슈머가 없는 "타이머 큐". TTL 10초가 걸려 있고, 만료되면 DLX 로 떨어진다.
@@ -26,6 +28,14 @@ public final class RabbitTopology {
     public static final String Q_OFFER_TIMER = "dispatch.offer.timer";
     /** 만료 제안 수신 — offer-relay 가 다음 후보에게 재제안한다 */
     public static final String Q_OFFER_EXPIRED = "dispatch.offer.expired";
+    /**
+     * 재제안을 3회 재시도해도 실패한 메시지.
+     *
+     * <p>그냥 버리면 그 주문은 재제안을 영영 못 받는다. 보드에는 EXPIRED 가 남고 타이머는
+     * 이미 없으니 아무도 다시 안 건드린다. 손님 화면에는 "배차 중" 이 계속 떠 있고
+     * 그걸 알아챌 사람이 아무도 없다.
+     */
+    public static final String Q_OFFER_EXPIRED_DLQ = "dispatch.offer.expired.dlq";
     /** 제안 알림 발송 — notification-worker 가 소비 */
     public static final String Q_OFFER_NOTIFY = "dispatch.offer.notify";
 

@@ -51,17 +51,13 @@ delivery:
     max-candidates: 10
     # 대기 보너스 상한(분). 10분 넘게 기다린 라이더는 1km 정도 더 멀어도 가까운 사람을 이긴다.
     wait-bonus-cap-minutes: 10
-    # 배차 리스 유지 시간. 정상이면 100ms 안에 끝난다. 이 값은 "프로세스가 죽어도 이만큼
-    # 뒤엔 알아서 풀려라" 는 안전장치지 정상 경로에서 쓰는 시간이 아니다.
-    lock-ttl: 15s
-    # 라이더 찜 유지 시간. 제안 TTL 10초에 2초를 얹었다. 먼저 풀리면 제안이 살아 있는데
-    # 다른 주문이 그 라이더를 또 잡아가고, 너무 길면 거절한 라이더가 한동안 논다.
-    rider-lock-ttl: 12s
-    # 후보 목록과 제안 보드의 TTL. 지우는 코드가 안 도는 경로가 너무 많아서 만료에 기댄다.
-    state-ttl: 10m
     # OFFERED 인데 이만큼 지났으면 좀비다. 제안이 10초짜리인데 이만큼 남아 있다는 건
     # 타이머 메시지가 애초에 없었다는 뜻이다. offer-relay 큐 랙을 보고 조정한다.
     zombie-threshold: 30s
+
+  # 락 TTL 세 개(lease-ttl 15s, rider-lock-ttl 12s, state-ttl 10m)는 여기 없다.
+  # offer-relay 와 반드시 같은 값이어야 해서 common.dispatch.OfferProperties 에 기본값으로 박아뒀다.
+  # 바꾸려면 delivery.offer.* 로 덮으면 되는데, 그때는 offer-relay 쪽에도 똑같이 넣어야 한다.
 
 management:
   endpoints:
