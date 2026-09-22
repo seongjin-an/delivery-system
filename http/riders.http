@@ -1,0 +1,50 @@
+### GI-01 위치 인덱싱이 도는지 보는 법
+#
+# location-ingest(LI-01)가 아직 없어서 HTTP 로 좌표를 넣을 수는 없다.
+# 그때까지는 rider.location 토픽에 직접 넣어서 확인한다.
+#
+#   docker exec -i delivery-kafka bash -lc \
+#     "kafka-console-producer --bootstrap-server localhost:9094 --topic rider.location \
+#      --property parse.key=true --property key.separator=:" <<'MSG'
+#   900000000000001:{"riderId":900000000000001,"lat":37.4979,"lng":127.0276,"zoneId":"Z3749_12702","sentAt":"2026-09-22T13:00:00.000Z"}
+#   MSG
+#
+# 키를 riderId 로 주는 게 중요하다. 같은 라이더의 좌표가 한 파티션에 순서대로 들어가야
+# 배치에서 "마지막 것만 남기기" 가 맞는 답을 낸다.
+
+### 인덱스에 들어갔는지 — 세 군데를 다 본다
+#   docker exec delivery-redis redis-cli ZCARD riders:online
+#   docker exec delivery-redis redis-cli ZCARD riders:heartbeat
+#   docker exec delivery-redis redis-cli HGETALL rider:state:900000000000001
+
+### 후보 검색이 실제로 되는지 — 가게 위치 기준 거리순
+# dispatch-engine 의 DE-02 가 이 명령을 그대로 쓴다.
+#   docker exec delivery-redis redis-cli GEOSEARCH riders:online \
+#     FROMLONLAT 127.027610 37.498095 BYRADIUS 3000 m ASC WITHDIST
+
+### 배치 중복 제거가 도는지 — 지표 두 개의 차이로 본다
+#
+#   geo_index_records_total  카프카에서 받은 레코드 수
+#   geo_index_riders_total   레디스에 실제로 쓴 라이더 수
+#
+# 둘의 차이가 배치 안에서 걷어낸 중복이다. 이게 커지면 컨슈머가 밀리고 있다는 뜻이다 —
+# 정상이면 라이더가 3초마다 한 점을 보내니 한 배치에 같은 사람이 두 번 들어올 일이 거의 없다.
+GET {{geoIndexer}}/actuator/prometheus
+
+### 규칙 4번이 지켜지는지 — 배달 중인 라이더를 IDLE 로 덮지 않는가
+#
+# 이게 깨지면 배달 중인 사람에게 새 콜이 간다. 확인하는 법:
+#   1) 주문을 넣고 제안이 간 라이더가 수락하게 한다 (offers.http)
+#   2) 그 라이더의 좌표를 위 프로듀서로 몇 번 더 보낸다
+#   3) status 가 DELIVERING 그대로인지, lat 만 바뀌었는지 본다
+#      docker exec delivery-redis redis-cli HMGET rider:state:{riderId} status lat currentOrderId
+
+### 좌표를 버리는 경우도 지표로 남는다
+#
+#   geo_index_dropped_total{reason="malformed"}       JSON 을 못 읽음
+#   geo_index_dropped_total{reason="out_of_range"}    한국 밖 좌표
+#   geo_index_dropped_total{reason="redis_error"}     레디스 쓰기 실패 (재시도 안 하고 버린다)
+#
+# 마지막 것이 계속 오르면 레디스가 문제인 거다. 위치는 재시도하지 않고 버리기 때문에
+# 로그와 이 지표 말고는 알 방법이 없다.
+GET {{geoIndexer}}/actuator/prometheus

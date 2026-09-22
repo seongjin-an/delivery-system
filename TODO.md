@@ -196,14 +196,65 @@ Debezium CDC 로 교체하면서 (기본값이 `delivery.outbox.mode=CDC` 로 �
       느슨해지는데 그건 감수한다 (기능 정의서 LI-01 규칙 2번)*
 
 ### geo-indexer
-- [ ] `GI-01` `rider.location` 소비 → `GEOADD` + `HSET rider:state` + `ZADD riders:heartbeat`
-- [ ] 배치 안에서 라이더별로 마지막 좌표만 남기고 파이프라인으로 한 번에 쓰기
-- [ ] `status` 는 조건부로만 갱신 — `OFFERED` / `DELIVERING` 은 절대 안 건드린다
+- [x] `GI-01` `rider.location` 소비 → `GEOADD` + `HSET rider:state` + `ZADD riders:heartbeat`
+- [x] 배치 안에서 라이더별로 마지막 좌표만 남기고 파이프라인으로 한 번에 쓰기
+- [x] `status` 는 조건부로만 갱신 — `OFFERED` / `DELIVERING` 은 절대 안 건드린다
       *안 지키면: 배달 중 라이더가 새 주문 후보로 다시 잡힌다 (흐름 시나리오 10번)*
 - [ ] `GI-02` 오프라인 정리 10초 주기 — `ZRANGEBYSCORE` 로 대상 찾고 `SET lock:sweep NX` 로 단독 실행
 - [ ] `GI-03` `GET /api/riders/{riderId}/state` — 디버깅용
-- [ ] 수동 ack + `auto-offset-reset: latest`
+- [x] 수동 ack + `auto-offset-reset: latest`
       *왜: 밀린 위치는 쓸모없다. 과거를 따라잡느니 현재부터 보는 게 맞다.*
+
+GI-01 에서 정한 것
+- **상태 갱신은 Lua 여야 한다.** `HGET status` 로 읽고 자바에서 판단한 뒤 `HSET` 하면 그 사이에
+  dispatch-engine 이 끼어든다. `t=0 오프라인이네 → t=1 배차가 제안을 보냄(OFFERED) →
+  t=2 우리가 IDLE 을 씀` 이면, 제안을 들고 있는 라이더가 "한가함" 이 돼서 다른 주문이 또 뽑아간다.
+  제안 보드의 펜싱 규칙이나 `release-rider.lua` 와 같은 생각이다.
+- **모르는 status 값은 안 건드린다.** 승격 조건을 "없거나 OFFLINE 일 때" 로만 뒀다. 우리가 모르는
+  상태를 IDLE 로 덮는 것보다 그냥 두는 쪽이 덜 위험하다 — 후보 검색이 IDLE 만 뽑으니까
+  안 뽑히고 끝난다.
+- **이건 `libs/common` 으로 안 옮겼다.** `riders:online` 과 `riders:heartbeat` 에 **쓰는** 건
+  geo-indexer 뿐이고 dispatch-engine 은 GEOSEARCH 로 읽기만 한다. `OfferSender` 를 옮긴 건
+  두 서비스가 같은 로직을 진짜로 돌려서였고 여기는 아니다. 필드 이름이 어긋날 위험은
+  `RiderStateFields` 가 이미 막는다.
+- **실패해도 재시도하지 않고 ack 한다.** 다른 컨슈머와 정반대라 헷갈릴 만한 부분이다.
+  `order.created` 는 한 건을 놓치면 손님 주문이 사라지니 DLT 까지 가며 붙잡지만, 위치는 한 점을
+  놓쳐도 3초 뒤 다음 점이 온다. 재시도하면 그동안 파티션이 막혀서 **밀린 좌표가 더 쌓인다.**
+  신선도가 전부인 데이터에서 밀리는 건 잃는 것보다 나쁘다. `auto-offset-reset: latest` 와 같은
+  결정이다. 대신 조용히 넘어가지 않게 ERROR 로 찍고 `geo_index_dropped_total` 을 올린다.
+- **파이프라인 안에서는 EVALSHA 가 아니라 EVAL 이다.** EVALSHA 는 서버에 스크립트가 없으면
+  NOSCRIPT 가 오는데, 파이프라인은 결과를 맨 끝에 한꺼번에 받아서 **중간에 알아채고 다시 보낼
+  방법이 없다.** 레디스를 재시작하거나 `SCRIPT FLUSH` 가 한 번 돌면 그 배치가 통째로 날아간다.
+  스크립트 본문을 매번 보내는 만큼 바이트는 손해지만(라이더 한 명당 1KB 남짓) 이게 맞다.
+  스프링의 `RedisTemplate.execute(script, ...)` 도 파이프라인 안에서는 같은 이유로 EVAL 로 떨어진다.
+- **좌표 검증을 컨슈머에서 또 한다.** location-ingest 를 못 믿어서가 아니라 토픽에 누가 뭘 넣을지
+  몰라서다. 범위 밖 좌표가 `GEOADD` 로 들어가면 레디스가 거절하면서 **파이프라인 전체가 실패한다** —
+  좌표 하나 때문에 멀쩡한 라이더 200명이 같이 날아간다. 못 읽는 JSON 도 같은 이유로 건너뛴다.
+- `lastSeenAt` 은 **서버가 받은 시각**이지 `sentAt` 이 아니다. GI-02 가 이 값으로 "이 사람 사라졌나"
+  를 판단하는데, 그 판단이 라이더 휴대폰 시계에 좌우되면 안 된다. 대신 컨슈머가 밀리면 오래된
+  좌표가 방금 것처럼 보이는 단점이 있는데, 그건 컨슈머 랙을 직접 보면 된다(시나리오 B).
+- 배치 안 중복 제거는 `sentAt` 비교가 아니라 **리스트 순서**로 한다. 파티션 키가 riderId 라
+  한 라이더의 좌표는 같은 파티션에 순서대로 들어오고 컨슈머도 그 순서로 받는다.
+  휴대폰 시계보다 카프카가 보장하는 순서를 믿는 게 낫다.
+
+GI-01 에서 확인한 것 (LI-01 이 아직 없어서 `rider.location` 에 직접 넣고)
+- 좌표 6건 → `riders:online` 6명, `riders:heartbeat` 6명, `rider:state` 에 lat/lng/lastSeenAt/
+  status=IDLE/idleSince 다 채워짐.
+- `GEOSEARCH` 가 거리순으로 나온다 — 21.6m, 196.9m, 405.3m, 613.7m, 822.4m, 1031.0m.
+  주문을 넣으니 제일 가까운 21.6m 라이더가 1순위로 뽑혔다. **카프카 → 레디스 → 배차가 이어졌다.**
+- **규칙 4번을 실제로 봤다.** 라이더가 수락해서 `DELIVERING` 이 된 뒤 좌표를 3번 더 보냈는데
+  status 는 `DELIVERING` 그대로고 lat 만 37.4979 → 37.5069 로 갱신됐다. `currentOrderId` 도 살아 있다.
+- **배치 중복 제거가 도는 걸 지표로 확인했다.** 라이더 2명의 좌표 30건을 한꺼번에 던졌더니
+  `geo_index_records_total` 은 +30, `geo_index_riders_total` 은 **+2**. 레디스 쓰기 28번을 아꼈다.
+  남은 좌표도 각각 마지막 것(37.5007, 37.5008)이었다.
+
+GI-01 에서 남은 것
+- `geo_index_records_total` 과 `geo_index_riders_total` 의 차이가 곧 "배치 안 중복" 인데,
+  이게 커지면 컨슈머가 밀리고 있다는 신호다. 정상이면 라이더가 3초마다 한 점을 보내니 한 배치에
+  같은 사람이 두 번 들어올 일이 거의 없다. 시나리오 B 에서 이 비율을 그래프로 본다.
+- 라이더가 오프라인이 돼도 `riders:online` 에서 안 빠진다. GI-02 몫이다.
+- `sentAt` 을 아직 아무 데도 안 쓴다. 3단계에서 "휴대폰이 보낸 시각 → 인덱스에 반영된 시각"
+  지연을 재는 데 쓸 값이다.
 
 ### dispatch-engine
 - [x] `DE-01` `order.created` 소비 — 리스 획득 → 좀비 판정 → 후보 검색 → 제안
