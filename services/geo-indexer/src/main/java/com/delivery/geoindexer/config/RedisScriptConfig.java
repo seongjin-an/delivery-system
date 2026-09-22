@@ -24,4 +24,13 @@ public class RedisScriptConfig {
         script.setResultType(Long.class);
         return script;
     }
+
+    /** GI-02 오프라인 정리. 라이더 한 명의 판정과 정리를 한 덩어리로 한다 */
+    @Bean
+    public RedisScript<Long> sweepRiderScript() {
+        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+        script.setLocation(new ClassPathResource("lua/sweep-rider.lua"));
+        script.setResultType(Long.class);
+        return script;
+    }
 }

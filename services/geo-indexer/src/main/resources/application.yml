@@ -32,6 +32,17 @@ delivery:
       # 시나리오 B 의 손잡이: concurrency 를 파티션 수(6) 위로 올려도 처리량이 안 늘어난다.
       #   인스턴스 수 × concurrency 가 파티션 수를 넘는 순간부터 남는 스레드는 그냥 놀고 있다.
       concurrency: 3
+  sweep:
+    # GI-02 오프라인 정리. 끄면 스케줄러 자체가 안 뜬다 (시나리오 B 에서 컨슈머만 잴 때)
+    enabled: ${SWEEP_ENABLED:true}
+    interval: 10s
+    # 재시작하고 바로 돌면 컨슈머가 파티션을 받기 전이라 멀쩡한 라이더를 다 오프라인으로 만든다.
+    # 실제로 재시작해보니 파티션을 받는 데 35초가 걸렸다. 넉넉하게 60초.
+    initial-delay: 60s
+    offline-after: 30s
+    lock-ttl: 8s
+    batch-size: 500
+    time-budget: 6s
 
 management:
   endpoints:

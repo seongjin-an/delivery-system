@@ -217,6 +217,7 @@ STOP_INFRA=true ./scripts/stop.sh   # 전부 종료
 | `dispatch:offer:by-id:{offerId}` | String | `offerId` → `orderId` 역인덱스 |
 | `lock:dispatch:{orderId}` | String | `SET NX PX` 배차 락 |
 | `lock:rider:{riderId}` | String | 라이더 중복 제안 방지 |
+| `lock:sweep:offline` | String | 오프라인 정리를 한 번에 한 대만 돌리는 락. 값은 잡은 인스턴스 |
 | `idem:order:{key}` | String | 주문 멱등키 |
 | `rate:push` | 토큰버킷 | 푸시 API 전역 레이트리밋 |
 
