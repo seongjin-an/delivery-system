@@ -210,9 +210,11 @@ STOP_INFRA=true ./scripts/stop.sh   # 전부 종료
 | 키 | 자료구조 | 용도 |
 |---|---|---|
 | `riders:online` | GEO | 온라인 라이더 위치 — `GEOSEARCH` 로 후보 검색 |
-| `rider:state:{id}` | Hash | status, lastSeenAt, currentOrderId |
+| `rider:state:{id}` | Hash | status, lat, lng, lastSeenAt, idleSince, currentOrderId, offerId |
+| `riders:heartbeat` | ZSET | 마지막 좌표 수신 시각. 오프라인 정리가 이걸 훑는다 |
 | `dispatch:candidates:{orderId}` | List | 점수순 후보. `LPOP` 으로 다음 사람 |
 | `dispatch:offer:{orderId}` | Hash | 진행 중 제안 상태 |
+| `dispatch:offer:by-id:{offerId}` | String | `offerId` → `orderId` 역인덱스 |
 | `lock:dispatch:{orderId}` | String | `SET NX PX` 배차 락 |
 | `lock:rider:{riderId}` | String | 라이더 중복 제안 방지 |
 | `idem:order:{key}` | String | 주문 멱등키 |
