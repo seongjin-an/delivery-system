@@ -1,0 +1,31 @@
+### NW-03 마케팅 푸시 투입 — priority 1 로 대량으로 넣는다
+# 우선순위 큐가 실제로 도는지 보는 용도다. 이걸 넣은 직후 주문을 넣으면(orders.http OR-01)
+# 배차 제안(priority 9)이 마케팅을 앞질러 먼저 나가야 한다.
+#
+# 단, prefetch 250(기본값)으로 띄우면 안 앞지른다. 컨슈머마다 250건을 미리 쥐고 있어서 제안이 그 뒤에 붙는다.
+# 실제로 해보니 제안이 34초 뒤에야 꺼내져서 만료로 걸러졌다. 앞지르는 걸 보려면 PUSH_PREFETCH=20 으로 띄운다.
+#   PUSH_PREFETCH=20 ./scripts/restart.sh notification-worker
+POST {{notificationWorker}}/api/notify/marketing
+Content-Type: application/json
+
+{ "count": 10000, "message": "점심 할인" }
+
+### 큐가 어떻게 되고 있는지
+#   docker exec delivery-rabbitmq rabbitmqctl list_queues name messages messages_unacknowledged consumers
+# messages_unacknowledged 가 곧 "컨슈머들이 미리 쥐고 있는 수" 다. 컨슈머 수 × prefetch 까지 올라간다.
+
+### 푸시 지표
+#
+#   push_sent_total{kind="offer|marketing"}        보낸 수
+#   push_failed_total{kind=...}                    한 번 보내다 실패한 수 (fail-rate 5%, 재시도 포함)
+#   push_dead_total{kind=...}                      3번 다 실패해서 notify.push.dlq 로 간 수
+#   push_ratelimited_total{kind=...}               전역 한도에 걸려 DLQ 로 간 수. 워커를 늘리면 오른다 (시나리오 C)
+#   push_expired_total                             큐에서 기다리다 제안이 끝나서 안 보낸 수
+#   push_offer_age_seconds                         제안이 나간 뒤 푸시가 실제로 나가기까지. 시나리오 C 에서 제일 먼저 볼 숫자
+GET {{notificationWorker}}/actuator/prometheus
+
+### 전역 한도가 인스턴스끼리 나눠지지 않는지 — 한도를 낮추고 두 대를 띄운다
+#   DELIVERY_PUSH_GLOBAL_RATE_PER_SEC=20 ./scripts/restart.sh notification-worker
+#   DELIVERY_PUSH_GLOBAL_RATE_PER_SEC=20 ./scripts/scale.sh notification-worker 2
+# 마케팅을 2000건쯤 넣고 두 인스턴스(8095, 8195)의 push_sent_total 증가를 더하면 초당 20 근처여야 한다.
+# 실제로 15초 동안 150 + 136 건, 초당 19.0 건이 나왔다.

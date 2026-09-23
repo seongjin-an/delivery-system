@@ -5,6 +5,7 @@ import com.delivery.common.RabbitTopology;
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.Declarables;
+import org.springframework.amqp.core.DirectExchange;
 import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.core.QueueBuilder;
 import org.springframework.amqp.core.TopicExchange;
@@ -113,6 +114,37 @@ public class RabbitTopologyConfig {
                 bind(timer, dispatchExchange, RabbitTopology.RK_OFFER_CREATED),
                 bind(expired, dispatchDlx, RabbitTopology.RK_OFFER_EXPIRED),
                 bind(expiredDlq, dispatchDlx, RabbitTopology.RK_OFFER_DEAD));
+    }
+
+    /**
+     * 알림 발송 토폴로지 (NW-01, NW-02, NW-03).
+     *
+     * <p>상수만 있고 선언이 없었다. 그 상태로 NW-01 이 notify.x 에 보내면 받을 큐가 없어서 메시지가
+     * 에러도 없이 사라진다. RE-01 때 dispatch 토폴로지를 여기로 모은 것과 같은 이유로 여기 둔다.
+     *
+     * <p>notify.push 는 우선순위 큐다. 배차 제안(9)과 마케팅(1)이 같은 큐에 섞여 들어가야
+     * "마케팅 1만 건 뒤에 들어온 제안이 먼저 나간다" 를 볼 수 있다. 큐를 둘로 나누면 우선순위가 아니라
+     * 컨슈머 배분 문제가 된다.
+     *
+     * <p><b>x-max-priority 는 큐를 만들 때만 정해진다.</b> 이 줄 없이 한 번이라도 떠서 큐가 생겼다면
+     * PRECONDITION_FAILED 로 기동이 막힌다. 그때는 큐를 지우고 다시 띄운다.
+     */
+    @Bean
+    public Declarables notifyTopology() {
+        DirectExchange notifyExchange = new DirectExchange(RabbitTopology.NOTIFY_EXCHANGE, true, false);
+        DirectExchange notifyDlx = new DirectExchange(RabbitTopology.NOTIFY_DLX, true, false);
+
+        Queue push = QueueBuilder.durable(RabbitTopology.Q_PUSH)
+                .maxPriority(RabbitTopology.PUSH_MAX_PRIORITY)
+                .deadLetterExchange(RabbitTopology.NOTIFY_DLX)
+                .deadLetterRoutingKey(RabbitTopology.RK_PUSH_DEAD)
+                .build();
+        Queue pushDlq = QueueBuilder.durable(RabbitTopology.Q_PUSH_DLQ).build();
+
+        return new Declarables(
+                notifyExchange, notifyDlx, push, pushDlq,
+                BindingBuilder.bind(push).to(notifyExchange).with(RabbitTopology.RK_PUSH),
+                BindingBuilder.bind(pushDlq).to(notifyDlx).with(RabbitTopology.RK_PUSH_DEAD));
     }
 
     private static Binding bind(Queue queue, TopicExchange exchange, String routingKey) {

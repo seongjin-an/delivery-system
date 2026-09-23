@@ -18,7 +18,11 @@ spring:
         acknowledge-mode: manual
         # 시나리오 C 의 손잡이. 이걸 크게 올려두면 워커 하나가 메시지를 잔뜩 쥐고
         # 외부 API 를 두드리다 429 를 맞는다. 큐 깊이는 줄어드는데 실패율만 오른다.
-        prefetch: 250
+        #
+        # 우선순위도 망가뜨린다. 실제로 마케팅 1만 건 뒤에 제안을 넣어보니, 컨슈머 6개가 250개씩 미리 쥔
+        # 1500건 뒤에 줄을 서서 34초 뒤에야 꺼내졌다(제안은 10초짜리). priority 9 는 큐 안에서만 앞지른다.
+        # 기능 정의서가 이 값을 기본으로 둔 건 이걸 보라는 거라 그대로 두고, 끌 때는 PUSH_PREFETCH=20 으로 띄운다.
+        prefetch: ${PUSH_PREFETCH:250}
         concurrency: 4
         max-concurrency: 16
         observation-enabled: true
@@ -29,6 +33,16 @@ delivery:
     global-rate-per-sec: 200
     # 가짜 외부 API 지연(ms). 이걸 올리면 워커를 늘려도 안 되는 상황이 재현된다.
     fake-latency-ms: 120
+    # 가짜 실패 확률. 재시도와 DLQ 경로를 실제로 타보려고 둔다
+    fail-rate: 0.05
+    # 가짜 푸시를 받아줄 곳(SM-04). 비우면 POST 는 건너뛰고 지연과 실패만 흉내 낸다
+    webhook-url: ${PUSH_WEBHOOK_URL:http://localhost:8097/sim/push}
+    # 한 건을 몇 번까지 보내볼지. 5% 실패면 세 번 연속 실패는 0.0125% 라 만 건에 한 건쯤 DLQ 로 간다
+    max-attempts: 3
+    retry-backoff: 100ms
+    # 토큰이 없을 때 100ms 씩 3번 더 기다려본다 (기능 정의서 NW-02 규칙 2번)
+    rate-limit-waits: 3
+    rate-limit-backoff: 100ms
 
 management:
   endpoints:
