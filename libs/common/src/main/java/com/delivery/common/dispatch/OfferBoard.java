@@ -1,14 +1,11 @@
-package com.delivery.dispatchengine.offer;
+package com.delivery.common.dispatch;
 
 import com.delivery.common.RedisKeys;
-import com.delivery.common.dispatch.OfferFields;
-import com.delivery.common.dispatch.OfferState;
-import com.delivery.dispatchengine.config.DispatchProperties;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
-import org.springframework.stereotype.Component;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -24,14 +21,18 @@ import java.util.Map;
  *
  * <p>부가 역할이 하나 더 있다. 배차 리스는 15초 뒤 사라지지만 이건 10분 남아 있어서,
  * 늦게 도착한 중복 메시지를 이걸로 걸러낸다.
+ *
+ * <p><b>이 클래스가 libs/common 에 있는 이유.</b> 같은 해시를 dispatch-engine 과 offer-relay 가
+ * 같이 다룬다. 서비스마다 따로 짜면 필드 이름 하나만 어긋나도 에러 없이 "값이 없는" 걸로
+ * 넘어가서, 모든 제안이 만료로 보이거나 펜싱이 통째로 안 걸린다. 조용히 잘못되는 종류다.
  */
-@Component
 @RequiredArgsConstructor
 public class OfferBoard {
 
     private final StringRedisTemplate redis;
-    private final RedisScript<Long> acceptOfferScript;
-    private final DispatchProperties properties;
+    private final RedisScript<Long> respondOfferScript;
+    private final RedisScript<Long> expireOfferScript;
+    private final OfferProperties properties;
 
     /** @return 없으면 null (= 처음 보는 주문) */
     public OfferSnapshot read(long orderId) {
@@ -47,6 +48,14 @@ public class OfferBoard {
         return new OfferSnapshot(
                 number(values.get(0)), number(values.get(1)), state,
                 (int) number(values.get(3)), number(values.get(4)));
+    }
+
+    /** DE-06 디버깅용 덤프. 필드를 골라 읽지 않고 해시를 통째로 가져온다 */
+    public Map<String, String> dump(long orderId) {
+        Map<Object, Object> raw = redis.opsForHash().entries(RedisKeys.offer(orderId));
+        Map<String, String> dump = new LinkedHashMap<>();
+        raw.forEach((key, value) -> dump.put(String.valueOf(key), String.valueOf(value)));
+        return dump;
     }
 
     public void writeOffered(long orderId, long offerId, long riderId, int attempt, long offeredAt) {
@@ -75,18 +84,36 @@ public class OfferBoard {
     }
 
     /**
-     * DE-04 수락 판정. Lua 한 번으로 읽고 비교하고 쓴다.
+     * DE-04 수락 / DE-05 거절 판정. Lua 한 번으로 읽고 비교하고 쓴다.
      *
      * <p>왜 Lua 냐면, 라이더가 9.9초에 수락하고 10.0초에 타이머가 만료되는 순간이 실제로 있어서다.
      * 자바에서 읽고 쓰면 둘 다 {@code OFFERED} 를 읽고 각자 자기 값을 써서, 나중에 쓴 쪽이 이긴다.
      * 라이더 화면엔 "배차 완료" 가 뜨는데 주문은 2순위에게 넘어가 있다.
+     *
+     * @param target 확정할 상태. {@link OfferState#ACCEPTED} 또는 {@link OfferState#REJECTED}
      */
-    public AcceptResult accept(long orderId, long offerId, long riderId, long acceptedAt) {
+    public OfferDecision respond(long orderId, long offerId, long riderId,
+                                 OfferState target, long respondedAt) {
         Long returned = redis.execute(
-                acceptOfferScript,
+                respondOfferScript,
                 List.of(RedisKeys.offer(orderId)),
-                Long.toString(offerId), Long.toString(riderId), Long.toString(acceptedAt));
-        return AcceptResult.of(returned);
+                Long.toString(offerId), Long.toString(riderId),
+                Long.toString(respondedAt), target.name());
+        return OfferDecision.of(returned);
+    }
+
+    /**
+     * RE-02 만료 판정. 펜싱 확인과 상태 전이를 Lua 한 번에 묶는다.
+     *
+     * <p>{@link #respond} 와 짝이다. 하나는 라이더 쪽에서, 하나는 타이머 쪽에서 같은 보드를
+     * 건드리는데 둘 중 하나만 Lua 면 막는 의미가 없다.
+     */
+    public ExpiryDecision expire(long orderId, long offerId, long expiredAt) {
+        Long returned = redis.execute(
+                expireOfferScript,
+                List.of(RedisKeys.offer(orderId)),
+                Long.toString(offerId), Long.toString(expiredAt));
+        return ExpiryDecision.of(returned);
     }
 
     public void writeState(long orderId, OfferState state) {

@@ -1,4 +1,4 @@
--- DE-04 제안 수락. 읽고 비교하고 쓰는 걸 한 덩어리로 처리한다.
+-- 라이더의 응답(수락 DE-04 / 거절 DE-05)을 확정한다. 읽고 비교하고 쓰는 걸 한 덩어리로 처리한다.
 --
 -- 자바에서 HGET 으로 읽고 if 로 보고 HSET 으로 쓰면 그 사이에 남이 끼어든다.
 -- "레디스는 싱글 스레드니까 괜찮지 않나" 가 여기서 제일 흔한 오해인데, 싱글 스레드가
@@ -9,10 +9,13 @@
 -- 둘이 각자 state 를 읽으면 둘 다 OFFERED 를 보고, 수락은 ACCEPTED 를 쓰고 만료는 EXPIRED 를 쓴다.
 -- 나중에 쓴 쪽이 이겨서, 라이더 화면엔 "배차 완료" 가 뜨는데 주문은 2순위에게 넘어간다.
 --
--- KEYS[1] = dispatch:offer:{orderId}
--- ARGV[1] = offerId, ARGV[2] = riderId, ARGV[3] = 수락 시각(epoch ms)
+-- 수락과 거절이 같은 스크립트인 이유: 판정 절차가 글자 하나까지 같고 마지막에 쓰는 상태만 다르다.
+-- 따로 두면 "offerId 를 riderId 보다 먼저 본다" 같은 규칙을 한쪽에만 고치는 날이 온다.
 --
--- 반환  1 = 수락했다
+-- KEYS[1] = dispatch:offer:{orderId}
+-- ARGV[1] = offerId, ARGV[2] = riderId, ARGV[3] = 응답 시각(epoch ms), ARGV[4] = 쓸 상태
+--
+-- 반환  1 = 확정했다
 --      -1 = 이미 수락된 제안이다        (409 ALREADY_TAKEN)
 --      -2 = 만료됐거나 지난 제안이다     (410 OFFER_EXPIRED)
 --       0 = 이 라이더의 제안이 아니다    (403 NOT_YOUR_OFFER)
@@ -37,14 +40,17 @@ if redis.call('HGET', KEYS[1], 'riderId') ~= ARGV[2] then
 end
 
 -- 같은 사람이 버튼을 두 번 눌렀거나 앱이 재전송했다.
+-- 거절하러 온 경우에도 이 답이 맞다 — 이미 수락한 제안은 거절할 수 없다.
 if state == 'ACCEPTED' then
     return -1
 end
 
--- EXPIRED / REJECTED / FAILED / CANCELLED. 어느 쪽이든 이제 와서 수락할 수는 없다.
+-- EXPIRED / REJECTED / FAILED / CANCELLED. 어느 쪽이든 이제 와서 응답할 수는 없다.
 if state ~= 'OFFERED' then
     return -2
 end
 
-redis.call('HSET', KEYS[1], 'state', 'ACCEPTED', 'acceptedAt', ARGV[3])
+-- respondedAt 은 수락이든 거절이든 "라이더가 답한 시각" 으로 같이 쓴다.
+-- 수락일 때만 acceptedAt 을 따로 두면 거절 응답시간을 잴 자리가 없어진다.
+redis.call('HSET', KEYS[1], 'state', ARGV[4], 'respondedAt', ARGV[3])
 return 1

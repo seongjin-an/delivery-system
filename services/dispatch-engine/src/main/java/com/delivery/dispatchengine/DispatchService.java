@@ -1,23 +1,22 @@
 package com.delivery.dispatchengine;
 
-import com.delivery.common.RedisKeys;
 import com.delivery.common.Times;
+import com.delivery.common.dispatch.CandidateList;
+import com.delivery.common.dispatch.DispatchEventPublisher;
+import com.delivery.common.dispatch.DispatchLease;
+import com.delivery.common.dispatch.OfferBoard;
+import com.delivery.common.dispatch.OfferSender;
+import com.delivery.common.dispatch.OfferSnapshot;
 import com.delivery.common.dispatch.OfferState;
 import com.delivery.common.event.DispatchOffer;
 import com.delivery.common.event.OrderCreated;
 import com.delivery.dispatchengine.candidate.Candidate;
 import com.delivery.dispatchengine.candidate.CandidateFinder;
 import com.delivery.dispatchengine.config.DispatchProperties;
-import com.delivery.dispatchengine.kafka.DispatchEventPublisher;
-import com.delivery.dispatchengine.lock.DispatchLease;
-import com.delivery.dispatchengine.offer.OfferBoard;
-import com.delivery.dispatchengine.offer.OfferSender;
-import com.delivery.dispatchengine.offer.OfferSnapshot;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -38,10 +37,10 @@ public class DispatchService {
 
     private final DispatchLease dispatchLease;
     private final OfferBoard offerBoard;
+    private final CandidateList candidateList;
     private final CandidateFinder candidateFinder;
     private final OfferSender offerSender;
     private final DispatchEventPublisher eventPublisher;
-    private final StringRedisTemplate redis;
     private final DispatchProperties properties;
 
     @Value("${spring.application.name}:${server.port}")
@@ -72,7 +71,7 @@ public class DispatchService {
                 return;
             }
 
-            saveCandidates(orderId, candidates);
+            candidateList.replace(orderId, candidates.stream().map(Candidate::riderId).toList());
 
             DispatchOffer offer = offerSender.offerToNextCandidate(orderId, 1);
             if (offer == null) {
@@ -126,19 +125,5 @@ public class DispatchService {
                 yield true;
             }
         };
-    }
-
-    /**
-     * 후보 목록을 줄 세워 저장한다.
-     *
-     * <p>DEL 을 먼저 하는 게 중요하다. 재배차할 때 앞의 목록이 남아 있으면 같은 라이더가
-     * 리스트에 두 번 들어가서, 이미 거절한 사람에게 또 제안이 간다.
-     */
-    private void saveCandidates(long orderId, List<Candidate> candidates) {
-        String key = RedisKeys.candidates(orderId);
-        redis.delete(key);
-        redis.opsForList().rightPushAll(key,
-                candidates.stream().map(c -> Long.toString(c.riderId())).toArray(String[]::new));
-        redis.expire(key, properties.stateTtl());
     }
 }

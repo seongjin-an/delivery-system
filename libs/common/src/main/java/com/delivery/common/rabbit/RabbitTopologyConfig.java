@@ -29,6 +29,8 @@ import org.springframework.context.annotation.Configuration;
  *                                        │ 10초 뒤 TTL 만료
  *                                        ▼
  *                        dispatch.dlx ──(offer.expired)──▶ dispatch.offer.expired
+ *                                                                │ 재제안 3회 실패
+ *                        dispatch.dlx ──(offer.dead)─────▶ dispatch.offer.expired.dlq
  * </pre>
  *
  * <p><b>타이머 큐에 리스너를 붙이면 안 된다.</b> 붙이면 메시지를 즉시 꺼내가서 TTL 이 흐를 시간이
@@ -38,6 +40,24 @@ import org.springframework.context.annotation.Configuration;
  * dispatch-engine 이 offer-relay 보다 먼저 뜨면 큐가 없어서 메시지가 조용히 버려진다.
  * 여기 두고 amqp 를 쓰는 서비스가 다 같이 선언하면 그 순서 문제가 사라진다.
  * 스프링 AMQP 의 선언은 멱등이라 여러 서비스가 같은 걸 선언해도 문제가 없다.
+ *
+ * <p><b>다만 "같은 걸" 일 때만 멱등이다.</b> 이미 있는 durable 큐에 인자를 새로 붙여서 다시
+ * 선언하면 브로커가 거절한다. 만료 큐에 DLX 를 새로 붙였을 때 실제로 당했다.
+ *
+ * <pre>
+ * PRECONDITION_FAILED - inequivalent arg 'x-dead-letter-exchange'
+ *   for queue 'dispatch.offer.expired': received 'dispatch.dlx' but current is none
+ * </pre>
+ *
+ * <p><b>그런데 앱은 멀쩡히 뜬다.</b> 기동 스크립트도 "offer-relay is up" 이라고 찍는다.
+ * 선언에 실패한 채널만 닫히고 그 큐에 리스너가 안 붙을 뿐이다. 그래서 겉보기엔 다 정상인데
+ * 만료 제안이 한 건도 처리되지 않는다. Debezium 커넥터가 RUNNING 인데 이벤트가 안 나가던 것과
+ * 똑같은 모양이다 — <b>떴다고 일이 되고 있는 게 아니다.</b>
+ *
+ * <p>인자는 나중에 못 바꾸니 큐를 지우고 다시 띄우는 수밖에 없다.
+ * <pre>docker exec delivery-rabbitmq rabbitmqctl delete_queue dispatch.offer.expired</pre>
+ * 확인은 컨슈머 수로 한다. 만료 큐의 consumers 가 0이면 리스너가 안 붙은 것이다.
+ * <pre>docker exec delivery-rabbitmq rabbitmqctl list_queues name messages consumers</pre>
  */
 @Configuration(proxyBeanMethods = false)
 public class RabbitTopologyConfig {
@@ -73,15 +93,26 @@ public class RabbitTopologyConfig {
                 .deadLetterRoutingKey(RabbitTopology.RK_OFFER_EXPIRED)
                 .build();
 
-        // 만료 큐 — offer-relay 가 꺼내서 다음 후보에게 재제안한다
-        Queue expired = QueueBuilder.durable(RabbitTopology.Q_OFFER_EXPIRED).build();
+        // 만료 큐 — offer-relay 가 꺼내서 다음 후보에게 재제안한다.
+        //
+        // 여기에도 DLX 를 건다. 재제안이 3회 재시도로도 안 되면 스프링이 requeue 없이 버리는데,
+        // 그냥 버리면 그 주문은 재제안을 영영 못 받는다. 라우팅 키를 offer.dead 로 바꿔서
+        // 같은 dispatch.dlx 를 타고 별도 큐로 보낸다 — offer.expired 를 그대로 쓰면
+        // 자기 큐로 도로 들어와서 무한히 돈다.
+        Queue expired = QueueBuilder.durable(RabbitTopology.Q_OFFER_EXPIRED)
+                .deadLetterExchange(RabbitTopology.DISPATCH_DLX)
+                .deadLetterRoutingKey(RabbitTopology.RK_OFFER_DEAD)
+                .build();
+
+        Queue expiredDlq = QueueBuilder.durable(RabbitTopology.Q_OFFER_EXPIRED_DLQ).build();
 
         return new Declarables(
                 dispatchExchange, dispatchDlx,
-                notify, timer, expired,
+                notify, timer, expired, expiredDlq,
                 bind(notify, dispatchExchange, RabbitTopology.RK_OFFER_CREATED),
                 bind(timer, dispatchExchange, RabbitTopology.RK_OFFER_CREATED),
-                bind(expired, dispatchDlx, RabbitTopology.RK_OFFER_EXPIRED));
+                bind(expired, dispatchDlx, RabbitTopology.RK_OFFER_EXPIRED),
+                bind(expiredDlq, dispatchDlx, RabbitTopology.RK_OFFER_DEAD));
     }
 
     private static Binding bind(Queue queue, TopicExchange exchange, String routingKey) {

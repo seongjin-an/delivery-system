@@ -43,8 +43,8 @@ Content-Type: application/json
 }
 
 ### 10초를 넘기고 수락 — 410 OFFER_EXPIRED
-# 제안을 받고 그냥 기다렸다가 부른다. offer-relay 가 아직 없어서 지금은 만료돼도
-# 2순위로 안 넘어가고 그냥 멈춘다 (RE-02 몫).
+# 제안을 받고 그냥 기다렸다가 부른다. offer-relay 가 붙었으니 이제 만료되면 2순위로 넘어간다.
+# 그래서 이걸 부를 때쯤이면 보드의 offerId 가 이미 바뀌어 있어서 410 이 온다.
 POST {{dispatchEngine}}/api/offers/{{offerId}}/accept
 Content-Type: application/json
 
@@ -62,14 +62,57 @@ Content-Type: application/json
   "riderId": {{riderId}}
 }
 
+### DE-05 제안 거절 — 200
+# 10초를 기다릴 이유가 없으니 곧바로 다음 후보로 넘어간다. 실제로 재본 값이 48ms 였다.
+# 응답이 200인 건 "거절을 접수했다" 는 뜻이지 다음 후보를 찾았다는 뜻이 아니다 —
+# 재제안은 offer-relay 가 비동기로 한다.
+POST {{dispatchEngine}}/api/offers/{{offerId}}/reject
+Content-Type: application/json
+
+{
+  "riderId": {{riderId}}
+}
+
+### 이미 수락한 제안을 거절 — 409 ALREADY_TAKEN
+# 수락과 거절이 같은 판정을 통과한다. 이미 받은 콜은 무를 수 없다.
+POST {{dispatchEngine}}/api/offers/{{offerId}}/reject
+Content-Type: application/json
+
+{
+  "riderId": {{riderId}}
+}
+
+### DE-06 배차 상태 덤프 — 디버깅 전용
+# 레디스에 흩어진 키 네 개를 한 번에 본다. redis-cli 로 키 이름을 하나씩 기억해내는 것보다 낫다.
+#   offer       dispatch:offer:{orderId} 해시 전체
+#   candidates  아직 안 써본 후보. 쓴 사람은 LPOP 으로 빠져서 안 보인다
+#   leaseOwner  lock:dispatch:{orderId}. 채워져 있으면 지금 누가 배차 중이라는 뜻
+#   riderState  제안이 나가 있는 라이더의 rider:state
+GET {{dispatchEngine}}/api/dispatch/{{orderId}}
+
 ### 수락 뒤 확인 — 주문이 ASSIGNED 이고 riderId 가 붙어 있어야 한다
 # order-api 가 dispatch.assigned 를 아직 안 먹는다(OR-07). 그래서 지금은 여기가
 # DISPATCHING 그대로다. 카프카에 이벤트가 나갔는지는 아래로 본다.
-#   docker exec delivery-kafka kafka-console-consumer.sh --bootstrap-server localhost:9092 \
-#     --topic dispatch.assigned --from-beginning --max-messages 1
+# (컨플루언트 이미지라 .sh 가 안 붙고, 컨테이너 안에서도 9094 로 붙는다)
+#   docker exec delivery-kafka bash -lc \
+#     "kafka-console-consumer --bootstrap-server localhost:9094 \
+#      --topic dispatch.assigned --from-beginning --timeout-ms 5000"
 GET {{orderApi}}/api/orders/{{orderId}}
 
 ### 레디스에서 직접 확인 — state 가 ACCEPTED, 라이더가 DELIVERING
 #   docker exec delivery-redis redis-cli HGETALL dispatch:offer:{orderId}
 #   docker exec delivery-redis redis-cli HGETALL rider:state:{riderId}
 #   docker exec delivery-redis redis-cli GET lock:rider:{riderId}   ← 안 지워져 있어야 정상
+
+### RE-02 재제안이 도는지 보는 법
+#
+# 아무도 수락하지 않으면 10초마다 다음 후보로 넘어가고, 다섯 번째에 배차가 실패한다.
+# 제일 편한 건 relay 로그를 따라가는 것이다.
+#   tail -f logs/offer-relay.log | grep -E '재제안|배차 실패'
+#
+# 큐가 제대로 서 있는지 (만료 큐의 consumers 가 1이어야 한다. 0이면 리스너가 안 붙은 것)
+#   docker exec delivery-rabbitmq rabbitmqctl list_queues name messages consumers
+#
+# 라이더가 놓여났는지 (status 가 IDLE 로 돌아오고 lock:rider 가 비어야 한다)
+#   docker exec delivery-redis redis-cli HGETALL rider:state:{riderId}
+#   docker exec delivery-redis redis-cli GET lock:rider:{riderId}

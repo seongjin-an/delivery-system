@@ -1,23 +1,25 @@
-package com.delivery.dispatchengine.kafka;
+package com.delivery.common.dispatch;
 
 import com.delivery.common.JsonUtil;
 import com.delivery.common.KafkaTopics;
 import com.delivery.common.Times;
 import lombok.RequiredArgsConstructor;
 import org.springframework.kafka.core.KafkaTemplate;
-import org.springframework.stereotype.Component;
 
-import java.time.Instant;
 import java.util.Map;
 
 /**
  * 배차 결과를 카프카로 알린다.
  *
- * <p>여기는 아웃박스를 안 쓴다. dispatch-engine 은 DB 를 안 쓰기 때문에 "DB 커밋과 발행이
- * 갈라지는 순간" 자체가 없다. 대신 발행에 실패하면 예외가 올라가서 카프카 메시지를 ack 하지
- * 않고, 재소비돼서 처음부터 다시 한다.
+ * <p>여기는 아웃박스를 안 쓴다. dispatch-engine 도 offer-relay 도 DB 를 안 쓰기 때문에
+ * "DB 커밋과 발행이 갈라지는 순간" 자체가 없다. 대신 발행에 실패하면 예외가 올라가서
+ * 메시지를 ack 하지 않고, 재소비돼서 처음부터 다시 한다.
+ *
+ * <p>두 서비스가 같이 쓰는 이유는 {@code dispatch.failed} 를 양쪽에서 발행해서다.
+ * dispatch-engine 은 "반경 안에 라이더가 없다" 로, offer-relay 는 "다섯 번 제안했는데 아무도
+ * 안 받았다" 로 발행한다. 각자 짜면 한쪽이 {@code reason} 을 {@code cause} 라고 적는 날이 오고,
+ * 그러면 order-api 의 OR-07 컨슈머가 한쪽만 조용히 못 읽는다.
  */
-@Component
 @RequiredArgsConstructor
 public class DispatchEventPublisher {
 
@@ -57,7 +59,7 @@ public class DispatchEventPublisher {
         publish(KafkaTopics.DISPATCH_FAILED, orderId, Map.of(
                 "orderId", orderId,
                 "reason", reason,
-                "at", Instant.now().toString()));
+                "at", Times.now().toString()));
     }
 
     private void publish(String topic, long orderId, Map<String, Object> payload) {

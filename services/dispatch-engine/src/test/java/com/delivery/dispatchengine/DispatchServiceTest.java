@@ -1,16 +1,17 @@
 package com.delivery.dispatchengine;
 
+import com.delivery.common.dispatch.CandidateList;
+import com.delivery.common.dispatch.DispatchEventPublisher;
+import com.delivery.common.dispatch.DispatchLease;
+import com.delivery.common.dispatch.OfferBoard;
+import com.delivery.common.dispatch.OfferSender;
+import com.delivery.common.dispatch.OfferSnapshot;
 import com.delivery.common.dispatch.OfferState;
 import com.delivery.common.event.DispatchOffer;
 import com.delivery.common.event.OrderCreated;
 import com.delivery.dispatchengine.candidate.Candidate;
 import com.delivery.dispatchengine.candidate.CandidateFinder;
 import com.delivery.dispatchengine.config.DispatchProperties;
-import com.delivery.dispatchengine.kafka.DispatchEventPublisher;
-import com.delivery.dispatchengine.lock.DispatchLease;
-import com.delivery.dispatchengine.offer.OfferBoard;
-import com.delivery.dispatchengine.offer.OfferSender;
-import com.delivery.dispatchengine.offer.OfferSnapshot;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -18,15 +19,12 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
-import org.springframework.data.redis.core.ListOperations;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -54,18 +52,15 @@ class DispatchServiceTest {
 
     @Mock private DispatchLease dispatchLease;
     @Mock private OfferBoard offerBoard;
+    @Mock private CandidateList candidateList;
     @Mock private CandidateFinder candidateFinder;
     @Mock private OfferSender offerSender;
     @Mock private DispatchEventPublisher eventPublisher;
-    @Mock private StringRedisTemplate redis;
-    @Mock private ListOperations<String, String> listOps;
 
     private DispatchService dispatchService;
 
-    private static final DispatchProperties PROPERTIES = new DispatchProperties(
-            3000, 30, 10, 10,
-            Duration.ofSeconds(15), Duration.ofSeconds(12),
-            Duration.ofMinutes(10), Duration.ofSeconds(30));
+    private static final DispatchProperties PROPERTIES =
+            new DispatchProperties(3000, 30, 10, 10, Duration.ofSeconds(30));
 
     private static OrderCreated order() {
         return new OrderCreated(ORDER_ID, "store-001",
@@ -79,10 +74,9 @@ class DispatchServiceTest {
 
     @BeforeEach
     void setUp() {
-        dispatchService = new DispatchService(dispatchLease, offerBoard, candidateFinder,
-                offerSender, eventPublisher, redis, PROPERTIES);
+        dispatchService = new DispatchService(dispatchLease, offerBoard, candidateList,
+                candidateFinder, offerSender, eventPublisher, PROPERTIES);
         ReflectionTestUtils.setField(dispatchService, "instanceId", "dispatch-engine:8093");
-        given(redis.opsForList()).willReturn(listOps);
         given(dispatchLease.acquire(anyLong(), anyString())).willAnswer(c -> c.getArgument(1));
         given(dispatchLease.release(anyLong(), anyString())).willReturn(true);
     }
@@ -104,18 +98,18 @@ class DispatchServiceTest {
         verify(eventPublisher).publishDispatching(ORDER_ID);
     }
 
-    /** 후보 목록을 새로 넣기 전에 반드시 지운다. 안 지우면 이미 거절한 사람이 또 들어간다 */
+    /** 후보를 점수순 그대로 넘긴다. 순서가 뒤집히면 제일 가까운 라이더가 1순위가 아니게 된다 */
     @Test
-    void clearsPreviousCandidateListBeforeSavingNewOne() {
+    void savesCandidatesInScoreOrder() {
         given(offerBoard.read(ORDER_ID)).willReturn(null);
-        givenCandidatesFound();
+        given(candidateFinder.find(anyDouble(), anyDouble(), anyLong())).willReturn(List.of(
+                new Candidate(RIDER_ID, 1.2, 0, 1.2),
+                new Candidate(RIDER_ID + 1, 2.4, 0, 2.4)));
         given(offerSender.offerToNextCandidate(anyLong(), anyInt())).willReturn(offer());
 
         dispatchService.dispatch(order());
 
-        verify(redis).delete("dispatch:candidates:" + ORDER_ID);
-        verify(listOps).rightPushAll(eq("dispatch:candidates:" + ORDER_ID), any(String[].class));
-        verify(redis).expire(eq("dispatch:candidates:" + ORDER_ID), any(Duration.class));
+        verify(candidateList).replace(ORDER_ID, List.of(RIDER_ID, RIDER_ID + 1));
     }
 
     @Test

@@ -17,6 +17,15 @@ public final class RiderStateFields {
     public static final String CURRENT_ORDER_ID = "currentOrderId";
 
     /**
+     * 지금 들고 있는 제안 (없으면 빈 문자열).
+     *
+     * <p>라이더를 놓아줄 때 "내가 보낸 제안이 맞나" 를 보려고 둔다. 이게 없으면 만료 처리가
+     * 그 사이 다른 주문에 잡혀간 라이더까지 IDLE 로 되돌려서, 한 라이더에게 제안이 두 개 뜬다.
+     * 제안 보드의 펜싱 규칙(기능 정의서 3.9)을 라이더 쪽에도 같은 모양으로 걸어둔 것이다.
+     */
+    public static final String OFFER_ID = "offerId";
+
+    /**
      * IDLE 이 된 시각 (epoch ms).
      *
      * <p>후보 점수의 대기 보너스가 이걸 쓴다 (기능 정의서 DE-02 규칙 4번).

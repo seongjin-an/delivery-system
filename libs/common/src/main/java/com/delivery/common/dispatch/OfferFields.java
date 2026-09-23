@@ -18,8 +18,16 @@ public final class OfferFields {
     public static final String ATTEMPT = "attempt";
     /** 제안을 보낸 시각 (epoch ms) */
     public static final String OFFERED_AT = "offeredAt";
-    /** 라이더가 수락한 시각 (epoch ms). 수락 Lua 가 state 와 같이 쓴다 (DE-04) */
-    public static final String ACCEPTED_AT = "acceptedAt";
+    /**
+     * 라이더가 응답한 시각 (epoch ms). respond-offer.lua 가 state 와 같이 쓴다 (DE-04, DE-05).
+     *
+     * <p>수락과 거절을 한 필드로 쓴다. "acceptedAt" 처럼 수락 전용으로 두면 거절까지 걸린
+     * 시간을 잴 자리가 없어진다. 어느 쪽이었는지는 state 를 같이 보면 된다.
+     */
+    public static final String RESPONDED_AT = "respondedAt";
+
+    /** 만료가 확정된 시각 (epoch ms). expire-offer.lua 가 쓴다 (RE-02) */
+    public static final String EXPIRED_AT = "expiredAt";
 
     private OfferFields() {
     }
