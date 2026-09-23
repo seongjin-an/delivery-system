@@ -3,10 +3,17 @@ package com.delivery.common.dispatch;
 import com.delivery.common.JsonUtil;
 import com.delivery.common.KafkaTopics;
 import com.delivery.common.Times;
+import com.delivery.common.event.DispatchAssigned;
+import com.delivery.common.event.DispatchFailed;
+import com.delivery.common.event.OrderStatusChanged;
 import lombok.RequiredArgsConstructor;
 import org.springframework.kafka.core.KafkaTemplate;
 
-import java.util.Map;
+import java.time.Instant;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+
 
 /**
  * 배차 결과를 카프카로 알린다.
@@ -14,6 +21,15 @@ import java.util.Map;
  * <p>여기는 아웃박스를 안 쓴다. dispatch-engine 도 offer-relay 도 DB 를 안 쓰기 때문에
  * "DB 커밋과 발행이 갈라지는 순간" 자체가 없다. 대신 발행에 실패하면 예외가 올라가서
  * 메시지를 ack 하지 않고, 재소비돼서 처음부터 다시 한다.
+ *
+ * <p><b>그러려면 브로커 응답을 기다려야 한다.</b> 예전엔 send() 가 돌려주는 future 를 버리고 있었다.
+ * 카프카 전송은 비동기라 그러면 실패해도 예외가 안 올라오고, 위에 적은 재소비는 한 번도 안 일어난다.
+ * 라이더가 수락해서 레디스엔 ACCEPTED 가 찍혔는데 dispatch.assigned 가 조용히 안 나가면,
+ * order-api 의 주문은 영원히 DISPATCHING 이다. OR-07 을 붙이면서 알아챘다.
+ *
+ * <p>HTTP 로 들어오는 수락(DE-04)은 이걸로도 다 안 막힌다. 레디스에 ACCEPTED 를 쓴 다음 발행이
+ * 실패하면 라이더는 500 을 받고, 다시 누르면 409 라서 이벤트는 끝내 안 나간다. 조용히 사라지진 않고
+ * ERROR 가 남는 데까지만 막았다. 제대로 하려면 아웃박스가 필요하다 (TODO 에 적어뒀다).
  *
  * <p>두 서비스가 같이 쓰는 이유는 {@code dispatch.failed} 를 양쪽에서 발행해서다.
  * dispatch-engine 은 "반경 안에 라이더가 없다" 로, offer-relay 는 "다섯 번 제안했는데 아무도
@@ -25,12 +41,13 @@ public class DispatchEventPublisher {
 
     private final KafkaTemplate<String, String> kafkaTemplate;
 
+    /** 브로커가 받았다고 할 때까지 기다리는 최대 시간. acks=all 이라 평소엔 몇 ms 다 */
+    private static final long SEND_TIMEOUT_SECONDS = 5;
+
     /** 배차가 시작됐다 (order-api 가 상태를 DISPATCHING 으로 바꾼다) */
     public void publishDispatching(long orderId) {
-        publish(KafkaTopics.ORDER_STATUS, orderId, Map.of(
-                "orderId", orderId,
-                "status", "DISPATCHING",
-                "at", Times.now().toString()));
+        publish(KafkaTopics.ORDER_STATUS, orderId,
+                new OrderStatusChanged(orderId, null, "DISPATCHING", Times.now()));
     }
 
     /**
@@ -41,29 +58,29 @@ public class DispatchEventPublisher {
      * 픽업·완료와 같은 줄에 놓고 읽는다. 한 토픽에 몰면 정산이 픽업 이벤트까지 걸러내야 한다.
      */
     public void publishAssigned(long orderId, long riderId, long offerId, int attempt) {
-        publish(KafkaTopics.DISPATCH_ASSIGNED, orderId, Map.of(
-                "orderId", orderId,
-                "riderId", riderId,
-                "offerId", offerId,
-                "attempt", attempt,
-                "at", Times.now().toString()));
-        publish(KafkaTopics.ORDER_STATUS, orderId, Map.of(
-                "orderId", orderId,
-                "riderId", riderId,
-                "status", "ASSIGNED",
-                "at", Times.now().toString()));
+        Instant now = Times.now();
+        publish(KafkaTopics.DISPATCH_ASSIGNED, orderId,
+                new DispatchAssigned(orderId, riderId, offerId, attempt, now));
+        publish(KafkaTopics.ORDER_STATUS, orderId,
+                new OrderStatusChanged(orderId, riderId, "ASSIGNED", now));
     }
 
     /** 후보를 다 썼는데 아무도 안 받았다 */
     public void publishFailed(long orderId, String reason) {
-        publish(KafkaTopics.DISPATCH_FAILED, orderId, Map.of(
-                "orderId", orderId,
-                "reason", reason,
-                "at", Times.now().toString()));
+        publish(KafkaTopics.DISPATCH_FAILED, orderId, new DispatchFailed(orderId, reason, Times.now()));
     }
 
-    private void publish(String topic, long orderId, Map<String, Object> payload) {
+    private void publish(String topic, long orderId, Object payload) {
         // 키를 orderId 로 둬서 같은 주문의 이벤트가 한 파티션에 순서대로 들어가게 한다.
-        kafkaTemplate.send(topic, Long.toString(orderId), JsonUtil.toJson(payload));
+        try {
+            kafkaTemplate.send(topic, Long.toString(orderId), JsonUtil.toJson(payload))
+                    .get(SEND_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(topic + " 발행 중에 끊겼다: orderId=" + orderId, e);
+        } catch (ExecutionException | TimeoutException e) {
+            // BusinessException 이 아니라서 컨슈머 쪽에서는 3회 백오프 재시도를 받는다.
+            throw new IllegalStateException(topic + " 발행 실패: orderId=" + orderId, e);
+        }
     }
 }

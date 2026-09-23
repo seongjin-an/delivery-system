@@ -85,8 +85,11 @@ Idempotency-Key: demo-key-price
 }
 
 ### OR-02 주문 조회 — 위에서 만든 주문의 orderId 를 넣는다
-# timeline 은 상태가 바뀔 때마다 한 줄씩 늘어난다. 지금은 CREATED 한 줄만 있다.
-# attempt 는 몇 번째 후보에서 잡혔는지인데 OR-07 이 채우기 전까지 0 이다.
+# timeline 은 상태가 바뀔 때마다 한 줄씩 늘어난다. 배차가 돌면 이렇게 된다.
+#   CREATED → DISPATCHING(+2초쯤) → ASSIGNED        라이더가 수락했을 때. riderId 와 attempt 가 채워진다
+#   CREATED → DISPATCHING(+2초쯤) → FAILED(+52초쯤)  다섯 번 제안했는데 아무도 안 받았을 때
+# DISPATCHING 이 빠지고 CREATED → ASSIGNED 로 바로 가면, 1순위가 아주 빨리 받아서 ASSIGNED 가 먼저 도착한 것이다.
+# 상태가 DISPATCHING 에서 안 움직이면 order-api 로그에서 "없는 주문" 이나 DLT 를 먼저 본다.
 GET {{orderApi}}/api/orders/881527393955193619
 
 ### 없는 주문 — 404 ORDER_NOT_FOUND
