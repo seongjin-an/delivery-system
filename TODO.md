@@ -83,7 +83,7 @@
 - [ ] `OR-04` `POST /api/orders/{orderId}/complete` — `delivery.completed` 발행, 라이더 해제
 - [ ] `OR-05` `POST /api/orders/{orderId}/cancel` — 진행 중 제안을 `CANCELLED` 로
 - [x] `OR-06` 아웃박스 폴러 200ms — `SELECT ... FOR UPDATE SKIP LOCKED`
-- [ ] `OR-07` `dispatch.assigned` / `dispatch.failed` 소비 → 상태 반영 (조건부 갱신으로 멱등)
+- [x] `OR-07` `dispatch.assigned` / `dispatch.failed` 소비 → 상태 반영 (조건부 갱신으로 멱등)
 - [x] `orders`, `outbox` 테이블 — JPA 엔티티로 잡았다 (`ddl-auto: update`)
 
 OR-01 에서 확인한 것 (MySQL + 레디스만 띄우고 order-api 한 대)
@@ -185,6 +185,44 @@ Debezium CDC 로 교체하면서 (기본값이 `delivery.outbox.mode=CDC` 로 �
 - 스크립트 버그로 한 번 시간을 날렸다. 같은 셸에서 `nohup java ... &` 로 앱을 띄우고 그 뒤에
   `curl ... & ... wait` 를 쓰면, `wait` 가 자바 프로세스까지 기다려서 영영 안 끝난다.
   앱 기동과 부하 주기는 셸을 나눠야 한다.
+
+OR-07 에서 정한 것
+- **읽고 바꾸지 않고, `UPDATE ... WHERE status IN (...)` 한 번으로 바꾼다.** `dispatch.assigned` 와 `order.status` 가
+  다른 토픽이라 두 스레드가 같은 주문을 동시에 만질 수 있다. 조건을 WHERE 에 넣으면 MySQL 이 행을 잠근 채 판정한다.
+  바뀐 행이 있을 때만 timeline 에 한 줄 남긴다. 중복 이벤트마다 적으면 같은 ASSIGNED 가 두 줄 생긴다.
+- **ASSIGNED 는 CREATED 에서도 받는다.** DISPATCHING 은 `order.status`, ASSIGNED 는 `dispatch.assigned` 로 와서
+  ASSIGNED 가 먼저 도착할 수 있다. 그 뒤에 늦게 온 DISPATCHING 은 CREATED 가 아니라 버려진다. 상태는 뒤로 안 간다.
+  CANCELLED 는 어떤 결과로도 안 바뀐다.
+- **`order.status` 에서 DISPATCHING 하나만 받는다.** 기능 정의서 OR-07 에는 없는 부분이다. OR-02 조회의 timeline
+  예시에 DISPATCHING 이 있는데 order-api 가 그걸 알 길이 이 토픽뿐이다. ASSIGNED 는 attempt 가 실린 `dispatch.assigned` 로
+  받고, PICKED_UP 과 DELIVERED 는 order-api 가 내보내는 것이라 버린다. 그래서 `order.status.DLT` 토픽도 새로 만들었다.
+  브로커가 토픽 자동 생성을 꺼놔서, 없으면 실패한 레코드를 DLT 로 보내다가 그것마저 실패한다.
+- **timeline 시각은 이벤트에 적힌 시각이다.** 받은 시각으로 적으면 컨슈머가 밀렸을 때 8초 만에 수락한 주문이
+  "배차까지 3분" 으로 보인다.
+- **없는 주문의 결과는 경고만 남기고 버린다.** 새 컨슈머 그룹이 earliest 로 처음부터 읽으면 DB 에 없는 옛 주문이 온다.
+  예외로 올리면 3번 재시도하고 DLT 로 가는데, 몇 번 해도 없는 건 없다.
+- **이벤트를 `libs/common` 의 레코드로 바꿨다 (`DispatchAssigned`, `DispatchFailed`, `OrderStatusChanged`).**
+  발행하는 쪽이 Map 에 필드 이름을 적어 보내고 있었는데, 받는 쪽도 따로 적으면 한쪽만 바꿨을 때 값이 조용히 0 이 된다.
+  `DispatchResultListenerTest` 는 진짜 `DispatchEventPublisher` 가 만든 JSON 을 리스너에 먹여서 둘이 맞는지 본다.
+
+OR-07 을 붙이다가 고친 것
+- **`DispatchEventPublisher` 가 발행 실패를 삼키고 있었다.** 주석엔 "실패하면 예외가 올라가서 ack 를 안 한다" 고 적혀
+  있었는데, `send()` 가 돌려주는 future 를 버려서 비동기 실패가 한 번도 안 올라왔다. 라이더가 수락해서 레디스엔 ACCEPTED 인데
+  `dispatch.assigned` 가 조용히 안 나가면 주문은 영원히 DISPATCHING 이다. 이제 브로커 응답을 최대 5초 기다린다.
+- [ ] **DE-04 수락은 이걸로도 다 안 막힌다.** 레디스에 ACCEPTED 를 쓴 다음 발행이 실패하면 라이더는 500 을 받고,
+      다시 누르면 409 라서 이벤트는 끝내 안 나간다. 지금은 ERROR 가 남는 데까지만 막았다.
+      `dispatch-engine` 의 `NO_CANDIDATE` 도 비슷하다 — 보드에 FAILED 를 쓴 뒤 발행이 실패하면 재시도 때 이미 FAILED 라 건너뛴다.
+      제대로 하려면 레디스 쪽 아웃박스(발행할 이벤트를 같은 Lua 안에서 리스트에 넣고 따로 내보내기)가 필요하다. 5단계 카오스 때 볼 것.
+
+OR-07 에서 확인한 것 (`./scripts/start.sh` 로 전부 띄우고, 라이더 6명은 location-ingest 로 좌표를 보내고)
+- 아무도 안 받은 주문: 진행 중 `DISPATCHING`, 52.3초에 `FAILED`. timeline `CREATED → DISPATCHING(+1.9s) → FAILED(+52.3s)`.
+- 1순위 거절, 2순위 수락: `ASSIGNED`, riderId 채워짐, `attempt=2`. timeline `CREATED → DISPATCHING(+2.1s) → ASSIGNED(+4.3s)`.
+- 같은 `dispatch.assigned` 를 토픽에 한 번 더 넣었더니 상태, attempt, timeline 줄 수 전부 그대로였고
+  `order_status_history` 에도 상태마다 한 줄씩이었다.
+- order-api 가 처음 붙으면서 토픽을 처음부터 읽었다. 앞선 테스트에서 실패로 끝난 주문 5건이 FAILED 로 채워지고,
+  DB 에 없는 주문 1건은 경고만 남기고 버렸다. ERROR 0건, lag 0.
+- MySQL 테스트에서 `assign` 의 상태 조건을 `OR 1 = 1` 로 망가뜨리면, 상태 조건에 기대는 테스트 3개
+  (늦은 결과로 PICKED_UP 이 되돌아가는지, 취소된 주문이 되살아나는지, 중복)만 실패하는 걸 확인했다.
 
 ### location-ingest
 - [x] `LI-01` `POST /api/riders/{riderId}/location` → `rider.location` (key = riderId)

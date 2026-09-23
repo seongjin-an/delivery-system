@@ -19,6 +19,17 @@ spring:
       port: ${REDIS_PORT:6380}
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9094}
+    # OR-07 배차 결과 소비 (dispatch.assigned, dispatch.failed, order.status)
+    consumer:
+      group-id: order-api
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      # 배차 결과를 하나라도 놓치면 그 주문은 영원히 배차 중으로 보인다. geo-indexer 의 latest 와 반대다.
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+    listener:
+      ack-mode: manual
+      observation-enabled: true
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
