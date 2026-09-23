@@ -43,6 +43,15 @@ public final class RabbitTopology {
     public static final String NOTIFY_EXCHANGE = "notify.x";
     public static final String NOTIFY_DLX = "notify.dlx";
     public static final String RK_PUSH = "push";
+    /** notify.push 에서 버려진 메시지가 notify.dlx 를 탈 때 쓰는 키 */
+    public static final String RK_PUSH_DEAD = "push.dead";
+
+    /** notify.push 의 x-max-priority. 한 번 만든 큐는 이 값을 못 바꾼다 */
+    public static final int PUSH_MAX_PRIORITY = 10;
+    /** 배차 제안. 10초 안에 라이더한테 가야 한다 */
+    public static final int PRIORITY_OFFER = 9;
+    /** 마케팅. 늦게 가도 된다 (NW-03) */
+    public static final int PRIORITY_MARKETING = 1;
 
     /** 푸시 발송 워크 큐. x-max-priority=10 (배차 제안 > 마케팅) */
     public static final String Q_PUSH = "notify.push";
