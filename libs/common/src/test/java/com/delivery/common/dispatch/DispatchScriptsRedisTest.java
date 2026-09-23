@@ -322,6 +322,56 @@ class DispatchScriptsRedisTest {
         });
     }
 
+    // ── finish-delivery.lua (OR-04) ───────────────────────────────────────
+
+    @Test
+    void finishDeliveryFreesRiderDeliveringThisOrder() {
+        run((context, redis) -> {
+            RiderState riderState = context.getBean(RiderState.class);
+            riderState.markDelivering(riderId, orderId);
+
+            assertThat(riderState.finishDelivery(riderId, orderId)).isTrue();
+
+            Map<Object, Object> dump = riderState.dump(riderId);
+            assertThat(dump.get(RiderStateFields.STATUS)).isEqualTo(RiderStatus.IDLE.name());
+            // 대기 보너스가 0부터 다시 세져야 한다. 빼먹어도 에러가 안 나서 여기서 본다
+            assertThat(dump.get(RiderStateFields.IDLE_SINCE)).isNotNull();
+            assertThat(dump.get(RiderStateFields.CURRENT_ORDER_ID)).isEqualTo("");
+        });
+    }
+
+    /**
+     * 완료 요청이 재시도로 늦게 한 번 더 온 경우. 첫 요청이 이미 풀어줬고, 그 사이 다른 주문의 제안을 받았다.
+     * 조건 없이 IDLE 로 쓰면 제안을 들고 있는 라이더가 한가한 사람이 돼서 다른 주문이 또 뽑아간다.
+     */
+    @Test
+    void lateRetriedFinishLeavesNewOfferAlone() {
+        run((context, redis) -> {
+            RiderState riderState = context.getBean(RiderState.class);
+            riderState.markDelivering(riderId, orderId);
+            riderState.finishDelivery(riderId, orderId);
+            riderState.markOffered(riderId, offerId);
+
+            assertThat(riderState.finishDelivery(riderId, orderId)).isFalse();
+
+            assertThat(riderState.dump(riderId).get(RiderStateFields.STATUS)).isEqualTo(RiderStatus.OFFERED.name());
+        });
+    }
+
+    @Test
+    void finishDeliveryIgnoresRiderDeliveringAnotherOrder() {
+        run((context, redis) -> {
+            RiderState riderState = context.getBean(RiderState.class);
+            long otherOrderId = Ids.newId();
+            riderState.markDelivering(riderId, otherOrderId);
+
+            assertThat(riderState.finishDelivery(riderId, orderId)).isFalse();
+
+            assertThat(riderState.dump(riderId).get(RiderStateFields.CURRENT_ORDER_ID))
+                    .isEqualTo(Long.toString(otherOrderId));
+        });
+    }
+
     // ── save-candidates.lua (DE-02) ───────────────────────────────────────
 
     @Test

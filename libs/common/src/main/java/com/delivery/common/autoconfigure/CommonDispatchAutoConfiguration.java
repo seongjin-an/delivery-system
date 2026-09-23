@@ -76,6 +76,8 @@ public class CommonDispatchAutoConfiguration {
         static final RedisScript<Long> SAVE_CANDIDATES = load("lua/save-candidates.lua");
         /** DE-05 / RE-02 라이더 놓아주기 */
         static final RedisScript<Long> RELEASE_RIDER = load("lua/release-rider.lua");
+        /** OR-04 배달 끝난 라이더 놓아주기 */
+        static final RedisScript<Long> FINISH_DELIVERY = load("lua/finish-delivery.lua");
 
         private static RedisScript<Long> load(String path) {
             DefaultRedisScript<Long> script = new DefaultRedisScript<>();
@@ -117,7 +119,7 @@ public class CommonDispatchAutoConfiguration {
         @ConditionalOnBean(StringRedisTemplate.class)
         @ConditionalOnMissingBean
         RiderState riderState(StringRedisTemplate redis) {
-            return new RiderState(redis, RELEASE_RIDER);
+            return new RiderState(redis, RELEASE_RIDER, FINISH_DELIVERY);
         }
     }
 

@@ -26,6 +26,7 @@ public class RiderState {
 
     private final StringRedisTemplate redis;
     private final RedisScript<Long> releaseRiderScript;
+    private final RedisScript<Long> finishDeliveryScript;
 
     /** 제안을 보냈다. 어떤 제안인지도 같이 적어둬야 나중에 놓아줄 때 내 것인지 알 수 있다 */
     public void markOffered(long riderId, long offerId) {
@@ -67,18 +68,20 @@ public class RiderState {
     }
 
     /**
-     * 조건 없이 한가한 상태로 되돌린다.
+     * 배달을 끝낸 라이더를 놓아준다 (OR-04). 지금 배달 중인 주문이 이 주문일 때만 IDLE 로 되돌린다.
      *
-     * <p>배달 완료(OR-04)처럼 "이 라이더가 지금 뭘 들고 있든 끝났다" 가 확실한 자리에서만 쓴다.
-     * 제안이 끝나서 놓아주는 거라면 {@link #release} 를 써야 한다 — 이건 그 사이 다른 주문이
-     * 잡아간 라이더까지 한가한 걸로 덮어써서, 제안을 들고 있는 사람이 또 후보로 뽑힌다.
+     * <p>예전엔 여기 조건 없이 IDLE 로 쓰는 {@code markIdle} 이 있었다. "배달 완료는 끝난 게 확실하니
+     * 조건이 필요 없다" 는 생각이었는데, 완료 요청이 재시도로 두 번 오면 두 번째가 올 때쯤엔 라이더가
+     * 이미 다른 주문의 제안을 들고 있을 수 있다. 시나리오는 {@code lua/finish-delivery.lua} 에 적어뒀다.
+     *
+     * @return IDLE 로 되돌렸으면 true. false 면 이미 풀려 있거나 다른 주문을 하는 중이다
      */
-    public void markIdle(long riderId) {
-        redis.opsForHash().putAll(RedisKeys.riderState(riderId), Map.of(
-                RiderStateFields.STATUS, RiderStatus.IDLE.name(),
-                RiderStateFields.IDLE_SINCE, Long.toString(Times.now().toEpochMilli()),
-                RiderStateFields.OFFER_ID, "",
-                RiderStateFields.CURRENT_ORDER_ID, ""));
+    public boolean finishDelivery(long riderId, long orderId) {
+        Long finished = redis.execute(
+                finishDeliveryScript,
+                List.of(RedisKeys.riderState(riderId)),
+                Long.toString(orderId), Long.toString(Times.now().toEpochMilli()));
+        return finished != null && finished == 1L;
     }
 
     /** 거절 횟수. 지금은 점수에 반영하지 않고 지표로만 본다 (DE-05) */

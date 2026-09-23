@@ -33,6 +33,26 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
                    @Param("to") OrderStatus to,
                    @Param("now") Instant now);
 
+    /**
+     * 배정된 라이더가 한 칸 진행시킨다 (OR-03 픽업, OR-04 완료).
+     *
+     * <p>기능 정의서 OR-03 규칙 그대로다. rider_id 까지 WHERE 에 넣어서, 다른 라이더가 남의 주문을
+     * 픽업 처리하는 걸 같은 문장 안에서 막는다. 영향 행 수가 0이면 왜 0인지는 부르는 쪽이 따로 본다.
+     */
+    @Modifying(clearAutomatically = true)
+    @Query("""
+            UPDATE Order o
+               SET o.status = :to, o.updatedAt = :now
+             WHERE o.orderId = :orderId
+               AND o.riderId = :riderId
+               AND o.status = :from
+            """)
+    int advance(@Param("orderId") long orderId,
+                @Param("riderId") long riderId,
+                @Param("from") OrderStatus from,
+                @Param("to") OrderStatus to,
+                @Param("now") Instant now);
+
     /** ASSIGNED 로 갈 때는 라이더와 attempt 도 같이 채운다. 조건은 transition 과 같다 */
     @Modifying(clearAutomatically = true)
     @Query("""

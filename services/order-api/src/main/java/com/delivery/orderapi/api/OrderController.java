@@ -2,6 +2,7 @@ package com.delivery.orderapi.api;
 
 import com.delivery.common.response.ApiResponse;
 import com.delivery.common.web.CommonHeaders;
+import com.delivery.orderapi.domain.DeliveryProgressService;
 import com.delivery.orderapi.domain.OrderCreateService;
 import com.delivery.orderapi.domain.OrderQueryService;
 import jakarta.validation.Valid;
@@ -23,6 +24,7 @@ public class OrderController {
 
     private final OrderCreateService orderCreateService;
     private final OrderQueryService orderQueryService;
+    private final DeliveryProgressService deliveryProgressService;
 
     /**
      * OR-01 주문 생성.
@@ -57,5 +59,24 @@ public class OrderController {
     @GetMapping("/{orderId}")
     public ApiResponse<OrderDetailResponse> get(@PathVariable long orderId) {
         return ApiResponse.ok(OrderDetailResponse.from(orderQueryService.findDetail(orderId)));
+    }
+
+    /**
+     * OR-03 픽업. 배정된 라이더만, ASSIGNED 일 때만. 이미 PICKED_UP 이면 200 (재시도).
+     */
+    @PostMapping("/{orderId}/pickup")
+    public ApiResponse<ProgressResponse> pickUp(@PathVariable long orderId,
+                                                @Valid @RequestBody RiderActionRequest request) {
+        return ApiResponse.ok(ProgressResponse.from(deliveryProgressService.pickUp(orderId, request.riderId())));
+    }
+
+    /**
+     * OR-04 배달 완료. 주문을 DELIVERED 로 바꾸고 delivery.completed 를 아웃박스에 넣은 뒤 라이더를 놓아준다.
+     * 이미 DELIVERED 여도 200 이고, 라이더 정리는 한 번 더 한다 (DeliveryProgressService 주석 참고).
+     */
+    @PostMapping("/{orderId}/complete")
+    public ApiResponse<ProgressResponse> complete(@PathVariable long orderId,
+                                                  @Valid @RequestBody RiderActionRequest request) {
+        return ApiResponse.ok(ProgressResponse.from(deliveryProgressService.complete(orderId, request.riderId())));
     }
 }
