@@ -4,6 +4,7 @@ import com.delivery.common.exception.BusinessException;
 import com.delivery.common.exception.ErrorCode;
 import com.delivery.common.web.CommonHeaders;
 import com.delivery.common.web.GlobalExceptionHandler;
+import com.delivery.orderapi.domain.DeliveryProgressService;
 import com.delivery.orderapi.domain.OrderCreateService;
 import com.delivery.orderapi.domain.OrderQueryService;
 import com.delivery.orderapi.domain.OrderStatus;
@@ -60,6 +61,9 @@ class OrderControllerTest {
 
     @MockitoBean
     private OrderQueryService orderQueryService;
+
+    @MockitoBean
+    private DeliveryProgressService deliveryProgressService;
 
     @Test
     void returns201WhenOrderIsCreated() throws Exception {
@@ -169,6 +173,54 @@ class OrderControllerTest {
     @Test
     void mapsNonNumericOrderIdToInvalidRequest() throws Exception {
         mockMvc.perform(get("/api/orders/{orderId}", "not-a-number"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+    }
+
+    // ── OR-03, OR-04 ──────────────────────────────────────────────────────
+
+    @Test
+    void pickUpReturns200WithStatus() throws Exception {
+        given(deliveryProgressService.pickUp(ORDER_ID, RIDER_ID))
+                .willReturn(new DeliveryProgressService.Progress(ORDER_ID, OrderStatus.PICKED_UP, true));
+
+        mockMvc.perform(post("/api/orders/{orderId}/pickup", ORDER_ID)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"riderId\": " + RIDER_ID + "}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("PICKED_UP"));
+    }
+
+    @Test
+    void otherRidersPickUpIs403() throws Exception {
+        given(deliveryProgressService.pickUp(ORDER_ID, RIDER_ID))
+                .willThrow(new BusinessException(ErrorCode.NOT_YOUR_ORDER));
+
+        mockMvc.perform(post("/api/orders/{orderId}/pickup", ORDER_ID)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"riderId\": " + RIDER_ID + "}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("NOT_YOUR_ORDER"));
+    }
+
+    @Test
+    void completeInWrongStateIs409() throws Exception {
+        given(deliveryProgressService.complete(ORDER_ID, RIDER_ID))
+                .willThrow(new BusinessException(ErrorCode.INVALID_STATE));
+
+        mockMvc.perform(post("/api/orders/{orderId}/complete", ORDER_ID)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"riderId\": " + RIDER_ID + "}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("INVALID_STATE"));
+    }
+
+    /** riderId 를 빼먹으면 403 이 아니라 400 이어야 앱 개발자가 헤매지 않는다 */
+    @Test
+    void missingRiderIdIs400() throws Exception {
+        mockMvc.perform(post("/api/orders/{orderId}/complete", ORDER_ID)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
     }

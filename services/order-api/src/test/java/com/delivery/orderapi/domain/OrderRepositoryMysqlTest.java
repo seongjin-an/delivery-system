@@ -110,6 +110,39 @@ class OrderRepositoryMysqlTest {
         assertThat(orderRepository.transition(orderId, BEFORE_RESULT, OrderStatus.FAILED, Instant.now())).isZero();
     }
 
+    // ── OR-03, OR-04 의 advance ───────────────────────────────────────────
+
+    @Test
+    void assignedRiderPicksUp() {
+        long orderId = givenAssignedTo(RIDER_ID);
+
+        assertThat(orderRepository.advance(orderId, RIDER_ID, OrderStatus.ASSIGNED, OrderStatus.PICKED_UP, Instant.now()))
+                .isEqualTo(1);
+        assertThat(orderRepository.findById(orderId).orElseThrow().getStatus()).isEqualTo(OrderStatus.PICKED_UP);
+    }
+
+    @Test
+    void otherRiderCannotPickUp() {
+        long orderId = givenAssignedTo(RIDER_ID);
+
+        assertThat(orderRepository.advance(orderId, RIDER_ID + 1, OrderStatus.ASSIGNED, OrderStatus.PICKED_UP, Instant.now()))
+                .isZero();
+    }
+
+    @Test
+    void cannotCompleteWithoutPickUp() {
+        long orderId = givenAssignedTo(RIDER_ID);
+
+        assertThat(orderRepository.advance(orderId, RIDER_ID, OrderStatus.PICKED_UP, OrderStatus.DELIVERED, Instant.now()))
+                .isZero();
+    }
+
+    private long givenAssignedTo(long riderId) {
+        long orderId = givenOrder(OrderStatus.DISPATCHING);
+        orderRepository.assign(orderId, BEFORE_RESULT, riderId, 1, Instant.now());
+        return orderId;
+    }
+
     /** 원하는 상태의 주문을 하나 만든다. 상태는 transition 으로 밀어 넣는다 */
     private long givenOrder(OrderStatus status) {
         long orderId = Ids.newId();

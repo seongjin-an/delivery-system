@@ -40,6 +40,11 @@ public class CandidateList {
         return riderId == null ? null : Long.valueOf(riderId);
     }
 
+    /** 배달이 끝나서 남은 후보가 필요 없다 (OR-04). TTL 로도 사라지지만 기다릴 이유가 없다 */
+    public void clear(long orderId) {
+        redis.delete(RedisKeys.candidates(orderId));
+    }
+
     /** DE-06 디버깅용. 꺼내지 않고 남은 목록만 본다 */
     public List<String> remaining(long orderId) {
         List<String> remaining = redis.opsForList().range(RedisKeys.candidates(orderId), 0, -1);

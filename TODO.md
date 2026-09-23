@@ -79,8 +79,8 @@
       *왜 아웃박스인가: 주문 INSERT 와 이벤트 INSERT 를 한 트랜잭션에 넣으면 "DB엔 주문이 있는데
       배차가 안 걸렸다" 가 구조적으로 안 생긴다. 카프카 발행 실패와 커밋 실패가 갈라지는 순간이 없어진다.*
 - [x] `OR-02` `GET /api/orders/{orderId}` — 상태와 attempt, timeline (`order_status_history` 테이블 추가)
-- [ ] `OR-03` `POST /api/orders/{orderId}/pickup`
-- [ ] `OR-04` `POST /api/orders/{orderId}/complete` — `delivery.completed` 발행, 라이더 해제
+- [x] `OR-03` `POST /api/orders/{orderId}/pickup`
+- [x] `OR-04` `POST /api/orders/{orderId}/complete` — `delivery.completed` 발행, 라이더 해제
 - [ ] `OR-05` `POST /api/orders/{orderId}/cancel` — 진행 중 제안을 `CANCELLED` 로
 - [x] `OR-06` 아웃박스 폴러 200ms — `SELECT ... FOR UPDATE SKIP LOCKED`
 - [x] `OR-07` `dispatch.assigned` / `dispatch.failed` 소비 → 상태 반영 (조건부 갱신으로 멱등)
@@ -223,6 +223,31 @@ OR-07 에서 확인한 것 (`./scripts/start.sh` 로 전부 띄우고, 라이더
   DB 에 없는 주문 1건은 경고만 남기고 버렸다. ERROR 0건, lag 0.
 - MySQL 테스트에서 `assign` 의 상태 조건을 `OR 1 = 1` 로 망가뜨리면, 상태 조건에 기대는 테스트 3개
   (늦은 결과로 PICKED_UP 이 되돌아가는지, 취소된 주문이 되살아나는지, 중복)만 실패하는 걸 확인했다.
+
+OR-03, OR-04 에서 정한 것
+- **라이더를 놓아줄 때 "이 주문으로 배달 중일 때만" 푼다 (`finish-delivery.lua`).** 기능 정의서 OR-04 규칙 2번은
+  조건 없는 `HSET status IDLE` 이고, 공용 `RiderState` 에도 그렇게 쓰는 `markIdle` 이 준비돼 있었다. 그런데 완료가 재시도로
+  두 번 오면 두 번째가 올 때쯤 라이더는 이미 다음 주문의 제안을 들고 있을 수 있다. 거기에 IDLE 을 쓰면 제안을 들고 있는
+  사람이 또 후보로 뽑힌다. `markIdle` 은 지웠다. 남겨두면 누군가 또 쓴다.
+- **레디스 정리는 DB 커밋이 끝난 다음에 한다.** 반대면 라이더를 풀어준 뒤 커밋이 실패하는 순간이 생긴다. 그러면 주문은
+  PICKED_UP 인데 라이더는 새 콜을 받는다. 그리고 **이미 DELIVERED 인 재요청에서도 정리를 한 번 더 한다.** 첫 요청이 커밋 뒤
+  레디스에서 실패했으면 두 번째 요청이 마저 끝내야 해서다. 정리가 조건부라 두 번 해도 괜찮다.
+- **정리 순서는 라이더 상태 → 찜 → 제안 보드와 후보 목록이다.** 중간에 죽는다면 상태가 풀린 쪽이 낫다. 찜은 수락 12초 뒤면
+  이미 저절로 풀려 있고 보드와 후보는 TTL 이 있는데, 상태만 DELIVERING 으로 남으면 그 라이더는 영영 새 콜을 못 받는다.
+- **403 을 409 보다 먼저 본다.** 영향 행 수가 0 이면 이유를 가르는데, 라이더가 다르면 상태가 뭐든 403 이다. 남의 주문이
+  이미 PICKED_UP 이라고 200 을 주면 다른 라이더 앱에 "픽업 완료" 가 뜬다.
+- **`elapsedSeconds` 는 수락부터 완료까지로 정했다.** 기능 정의서엔 뜻이 없다. 접수부터 세면 배차가 늦은 게 라이더 시간에 섞인다.
+  수락 시각은 OR-07 이 timeline 에 남긴 ASSIGNED 에서 꺼낸다.
+- `riderId` 는 `Long` 에 `@NotNull` 이다. `long` 이면 빼먹었을 때 0 이 들어가서 403 이 나가고, 앱 개발자는 권한 문제를 한참 들여다본다.
+
+OR-03, OR-04 에서 확인한 것 (서비스 8개를 다 띄우고 라이더 6명이 location-ingest 로 좌표를 보내고)
+- 수락 → 완료부터 누름 409 → 남이 픽업 403 → 픽업 200 → 픽업 재시도 200 → 완료 200.
+  timeline `CREATED → DISPATCHING(+1.2s) → ASSIGNED(+1.8s) → PICKED_UP(+3.7s) → DELIVERED(+3.7s)`.
+- 완료 뒤 라이더 `IDLE`, `idleSince` 새로 찍힘, `lock:rider` 와 제안 보드, 후보 목록 전부 0개.
+- `delivery.completed` 와 `order.status`(PICKED_UP, DELIVERED)가 아웃박스 → Debezium 을 거쳐 orderId 키로 나갔다.
+- **재시도 시나리오를 실제로 만들었다.** 완료한 라이더에게 다음 주문 B 의 제안이 가게 한 뒤 A 완료를 다시 보냈다. 200 이 나갔고,
+  라이더는 `OFFERED` 에 B 의 offerId, 찜도 B 것 그대로였다. `delivery.completed` 는 A 에 대해 1건뿐이었다.
+- 전체 테스트 196건 통과. `finish-delivery.lua` 의 조건 두 줄을 빼면 재시도 테스트와 "다른 주문 배달 중" 테스트 두 개만 실패한다.
 
 ### location-ingest
 - [x] `LI-01` `POST /api/riders/{riderId}/location` → `rider.location` (key = riderId)

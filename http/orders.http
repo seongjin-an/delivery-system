@@ -97,3 +97,21 @@ GET {{orderApi}}/api/orders/999999999999999999
 
 ### 숫자가 아닌 아이디 — 400 INVALID_REQUEST (스프링 타입 변환에서 걸린다)
 GET {{orderApi}}/api/orders/not-a-number
+
+### OR-03 픽업 — 배차받은 라이더만, ASSIGNED 일 때만
+# riderId 는 주문 조회(OR-02)의 riderId 를 넣는다. 같은 요청을 다시 보내도 200 이다(지하에서 응답을 못 받은 앱의 재시도).
+#   다른 라이더면 403 NOT_YOUR_ORDER, 아직 배차 전이거나 이미 완료면 409 INVALID_STATE
+POST {{orderApi}}/api/orders/{{orderId}}/pickup
+Content-Type: application/json
+
+{ "riderId": {{riderId}} }
+
+### OR-04 배달 완료 — PICKED_UP 일 때만. 주문은 DELIVERED, 라이더는 IDLE 로 풀린다
+# 다시 보내도 200 이다. 이때 라이더가 이미 다음 주문의 제안을 들고 있으면 상태는 안 건드린다.
+# 확인:
+#   docker exec delivery-redis redis-cli HMGET rider:state:{riderId} status currentOrderId idleSince
+#   docker exec delivery-kafka kafka-console-consumer --bootstrap-server localhost:9094 --topic delivery.completed --from-beginning --timeout-ms 5000
+POST {{orderApi}}/api/orders/{{orderId}}/complete
+Content-Type: application/json
+
+{ "riderId": {{riderId}} }

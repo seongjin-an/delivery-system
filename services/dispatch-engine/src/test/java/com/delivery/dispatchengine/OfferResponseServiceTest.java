@@ -97,7 +97,7 @@ class OfferResponseServiceTest {
         offerResponseService.accept(OFFER_ID, RIDER_ID);
 
         verify(riderState, never()).release(anyLong(), anyLong(), anyLong());
-        verify(riderState, never()).markIdle(anyLong());
+        verify(riderState, never()).finishDelivery(anyLong(), anyLong());
     }
 
     @Test
