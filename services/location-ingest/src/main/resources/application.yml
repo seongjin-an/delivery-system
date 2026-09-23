@@ -15,14 +15,31 @@ spring:
         linger.ms: 20
         batch.size: 65536
         compression.type: lz4
+        # 기본값 60초다. 카프카가 내려가면 send() 가 메타데이터를 기다리며 그 자리에서 60초를 멈추고,
+        # 톰캣 스레드 200개가 금방 다 묶여서 이 서비스까지 같이 죽는다. 좌표는 버려도 되니까 짧게 끊는다.
+        max.block.ms: 500
+        # 기본값이면 브로커가 죽어도 레코드가 버퍼에서 120초 동안 재시도하며 기다린다. 실제로 카프카를 내려보니
+        # 10초가 지나도 실패 지표가 0 이었다. 그 사이 되살아나면 2분 묵은 좌표가 한꺼번에 들어가고, 안 살아나면
+        # 2분 동안 장애를 모른다. 좌표는 3초 뒤 새 게 오니까 3초 안에 못 보내면 버린다.
+        # delivery.timeout.ms 는 linger.ms + request.timeout.ms 보다 커야 해서 request.timeout.ms 도 같이 줄였다.
+        request.timeout.ms: 2000
+        delivery.timeout.ms: 3000
     template:
       observation-enabled: true
 
 delivery:
   ingest:
-    topic: rider.location
+    # 토픽 이름은 여기 안 둔다. KafkaTopics.RIDER_LOCATION 한 군데서만 정한다.
     # 좌표 이동거리가 이보다 작으면 발행을 건너뛴다(정차 중인 라이더가 트래픽을 다 먹는 걸 막음)
     min-move-meters: 15
+    # 안 움직여도 이만큼 지나면 한 번은 보낸다. 안 그러면 서 있는 라이더가 30초 뒤 오프라인 처리된다.
+    # 왜 10초인지는 IngestProperties 에 적어뒀다.
+    max-silence: 10s
+    cache-max-riders: 100000
+    cache-expire-after: 30m
+    # infra/compose.yaml 의 CLUSTER_ID. 이게 없으면 카프카가 죽은 채로 뜬 순간 요청이 전부 멈춘다.
+    # 왜 그런지는 KafkaClusterIdConfig 에 적어뒀다.
+    kafka-cluster-id: ${KAFKA_CLUSTER_ID:RGVsaXZlcnlLUmFmdENJRA}
 
 management:
   endpoints:

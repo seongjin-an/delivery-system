@@ -1,7 +1,35 @@
-### GI-01 위치 인덱싱이 도는지 보는 법
+### LI-01 좌표 보내기 — 본문 없이 202 가 오면 정상
+# riderId 는 아무 숫자나 써도 된다. 처음 보는 라이더면 geo-indexer 가 IDLE 로 올려준다.
+POST {{locationIngest}}/api/riders/900000000000001/location
+Content-Type: application/json
+
+{ "lat": 37.4979, "lng": 127.0276, "sentAt": "2026-09-23T04:12:33.482Z" }
+
+### 같은 자리를 다시 보내면 — 202 는 똑같이 오지만 카프카에는 안 나간다
+# 15m 안 움직였으니까. 10초 넘게 조용했으면 KEEPALIVE 로 한 번 나간다
+# (안 그러면 서 있는 라이더가 30초 뒤 오프라인 정리에 걸린다).
+POST {{locationIngest}}/api/riders/900000000000001/location
+Content-Type: application/json
+
+{ "lat": 37.4979, "lng": 127.0276 }
+
+### 범위 밖 좌표 — 400 INVALID_COORDINATE
+POST {{locationIngest}}/api/riders/900000000000001/location
+Content-Type: application/json
+
+{ "lat": 0, "lng": 0 }
+
+### 필터가 얼마나 걸러내는지 — verdict 라벨로 본다
 #
-# location-ingest(LI-01)가 아직 없어서 HTTP 로 좌표를 넣을 수는 없다.
-# 그때까지는 rider.location 토픽에 직접 넣어서 확인한다.
+#   location_ingest_received_total{verdict="first"}      캐시에 없던 라이더 (처음, 30분 만에, 직전 발행 실패)
+#   location_ingest_received_total{verdict="moved"}      15m 이상 움직여서 발행
+#   location_ingest_received_total{verdict="keepalive"}  안 움직였지만 10초 조용해서 발행
+#   location_ingest_received_total{verdict="skip"}       안 보냄
+#   location_ingest_publish_failed_total                 발행 실패. 앱에는 202 가 나갔다
+#   location_ingest_future_sent_at_total                 폰 시계가 미래라 서버 시각으로 덮음
+GET {{locationIngest}}/actuator/prometheus
+
+### 토픽에 직접 넣기 — location-ingest 를 거치지 않고 geo-indexer 만 볼 때
 #
 #   docker exec -i delivery-kafka bash -lc \
 #     "kafka-console-producer --bootstrap-server localhost:9094 --topic rider.location \
