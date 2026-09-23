@@ -76,3 +76,22 @@ GET {{geoIndexer}}/actuator/prometheus
 # 마지막 것이 계속 오르면 레디스가 문제인 거다. 위치는 재시도하지 않고 버리기 때문에
 # 로그와 이 지표 말고는 알 방법이 없다.
 GET {{geoIndexer}}/actuator/prometheus
+
+### GI-02 오프라인 정리가 도는지
+#
+# 10초마다 좌표가 30초 넘게 안 온 라이더를 정리한다. 기동하고 60초 뒤부터 돈다.
+#
+#   geo_sweep_runs_total{result="ran"}          이 인스턴스가 락을 잡고 돈 횟수
+#   geo_sweep_runs_total{result="lock_held"}    다른 인스턴스가 돌고 있어서 건너뜀
+#   geo_sweep_riders_total{outcome="offline"}   IDLE 이던 사람을 OFFLINE 으로
+#   geo_sweep_riders_total{outcome="offered"}   제안 중이라 GEO 에서만 뺌
+#   geo_sweep_riders_total{outcome="delivering"} 배달 중이라 안 건드림 (조용한 배달 중 라이더 수만큼 매번 오른다)
+#   geo_sweep_riders_total{outcome="refreshed"} 뽑은 뒤에 새 좌표가 와서 손 안 댐
+#   geo_sweep_riders_total{outcome="unknown"}   모르는 status. 이게 오르면 누가 이상한 값을 쓴 거다
+#
+# 지금 어느 인스턴스가 돌고 있는지:
+#   docker exec delivery-redis redis-cli GET lock:sweep:offline
+#
+# 오프라인 대상이 몇 명 남았는지 (30초 전보다 오래된 것):
+#   docker exec delivery-redis redis-cli ZCOUNT riders:heartbeat -inf $(( ($(date +%s) - 30) * 1000 ))
+GET {{geoIndexer}}/actuator/prometheus
