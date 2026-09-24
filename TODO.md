@@ -330,7 +330,12 @@ LI-01 에서 확인한 것 (카프카, 레디스, location-ingest, geo-indexer �
 - [x] `status` 는 조건부로만 갱신 — `OFFERED` / `DELIVERING` 은 절대 안 건드린다
       *안 지키면: 배달 중 라이더가 새 주문 후보로 다시 잡힌다 (흐름 시나리오 10번)*
 - [x] `GI-02` 오프라인 정리 10초 주기 — `ZRANGEBYSCORE` 로 대상 찾고 `SET lock:sweep NX` 로 단독 실행
-- [ ] `GI-03` `GET /api/riders/{riderId}/state` — 디버깅용
+- [x] `GI-03` `GET /api/riders/{riderId}/state` — 디버깅용
+      *기능 정의서는 해시와 GEO 여부만 보여주라는데, "지금 후보로 뽑힐 수 있나" 와 못 뽑히는 이유(`blockers`)를 더했다.
+      GEO 에 없음, IDLE 이 아님, 좌표가 30초 넘게 끊김, 다른 주문이 찜함 — 배차가 안 될 때 사람이 머릿속으로 맞춰보는 네 가지다.
+      없는 라이더도 404 가 아니라 200 에 "rider:state 가 없다" 로 답한다. 없다는 것 자체가 이유라서다.
+      실제로 띄워서 보니 좌표를 보내는 라이더는 `candidate=true`, 예전 테스트에서 수락만 시키고 둔 라이더는
+      "status 가 DELIVERING 이라서 못 뽑힌다" 가 바로 나왔다.*
 - [x] 수동 ack + `auto-offset-reset: latest`
       *왜: 밀린 위치는 쓸모없다. 과거를 따라잡느니 현재부터 보는 게 맞다.*
 
