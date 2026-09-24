@@ -32,7 +32,33 @@ public class OfferBoard {
     private final StringRedisTemplate redis;
     private final RedisScript<Long> respondOfferScript;
     private final RedisScript<Long> expireOfferScript;
+    @SuppressWarnings("rawtypes")
+    private final RedisScript<List> cancelOfferScript;
     private final OfferProperties properties;
+
+    /**
+     * OR-05 취소가 보드를 CANCELLED 로 바꾼 결과.
+     *
+     * @param previous 바꾸기 전 상태. 보드가 없었으면 null
+     * @param riderId  그때 제안을 들고 있던(또는 수락한) 라이더. 없으면 0
+     * @param offerId  그 제안. 없으면 0
+     */
+    public record Cancellation(OfferState previous, long riderId, long offerId) {
+    }
+
+    /**
+     * 보드를 CANCELLED 로 바꾼다. 없으면 CANCELLED 만 든 보드를 만든다. 판정과 쓰기는 cancel-offer.lua 가 한 번에 한다.
+     */
+    @SuppressWarnings("unchecked")
+    public Cancellation cancel(long orderId, long cancelledAt) {
+        List<Object> result = redis.execute(cancelOfferScript, List.of(RedisKeys.offer(orderId)),
+                Long.toString(cancelledAt), Long.toString(properties.stateTtl().toSeconds()));
+        if (result == null || result.size() < 3) {
+            return new Cancellation(null, 0, 0);
+        }
+        return new Cancellation(OfferState.parseOrNull(text(result.get(0))),
+                number(result.get(1)), number(result.get(2)));
+    }
 
     /** @return 없으면 null (= 처음 보는 주문) */
     public OfferSnapshot read(long orderId) {

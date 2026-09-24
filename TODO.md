@@ -81,7 +81,7 @@
 - [x] `OR-02` `GET /api/orders/{orderId}` — 상태와 attempt, timeline (`order_status_history` 테이블 추가)
 - [x] `OR-03` `POST /api/orders/{orderId}/pickup`
 - [x] `OR-04` `POST /api/orders/{orderId}/complete` — `delivery.completed` 발행, 라이더 해제
-- [ ] `OR-05` `POST /api/orders/{orderId}/cancel` — 진행 중 제안을 `CANCELLED` 로
+- [x] `OR-05` `POST /api/orders/{orderId}/cancel` — 진행 중 제안을 `CANCELLED` 로
 - [x] `OR-06` 아웃박스 폴러 200ms — `SELECT ... FOR UPDATE SKIP LOCKED`
 - [x] `OR-07` `dispatch.assigned` / `dispatch.failed` 소비 → 상태 반영 (조건부 갱신으로 멱등)
 - [x] `orders`, `outbox` 테이블 — JPA 엔티티로 잡았다 (`ddl-auto: update`)
@@ -254,6 +254,29 @@ OR-03, OR-04 에서 확인한 것 (서비스 8개를 다 띄우고 라이더 6�
 - **재시도 시나리오를 실제로 만들었다.** 완료한 라이더에게 다음 주문 B 의 제안이 가게 한 뒤 A 완료를 다시 보냈다. 200 이 나갔고,
   라이더는 `OFFERED` 에 B 의 offerId, 찜도 B 것 그대로였다. `delivery.completed` 는 A 에 대해 1건뿐이었다.
 - 전체 테스트 196건 통과. `finish-delivery.lua` 의 조건 두 줄을 빼면 재시도 테스트와 "다른 주문 배달 중" 테스트 두 개만 실패한다.
+
+OR-05 에서 정한 것
+- **취소도 배차 리스(`lock:dispatch`)를 먼저 잡는다.** 기능 정의서엔 없다. 안 잡으면 "보드를 CANCELLED 로 바꿨는데, 후보를 막 찾은
+  dispatch-engine 이 OFFERED 로 덮어쓰며 제안을 보낸다" 가 된다. 라이더가 그걸 받으면 취소된 주문 때문에 DELIVERING 으로 갇힌다.
+  offer-relay 가 재제안할 때 리스를 잡는 것과 같은 이유다. 3초 안에 못 잡으면 503 `DISPATCH_BUSY` 를 준다(새 에러 코드).
+- **보드는 무조건 CANCELLED 로 바꾸고, 없으면 만든다 (`cancel-offer.lua`).** 아직 제안이 안 나간 주문을 취소했는데 보드가 없으면,
+  뒤늦게 order.created 를 읽은 dispatch-engine 이 처음 보는 주문으로 보고 배차를 시작한다. CANCELLED 보드가 있으면 `shouldProceed` 가 멈춘다.
+  이후 오는 만료 메시지(재제안)와 수락, 거절은 전부 이 CANCELLED 에 막힌다.
+- **수락과 취소가 겹칠 때는 양쪽이 다 확인한다.** 수락(DE-04)은 리스를 안 잡는다. 수락 Lua 가 ACCEPTED 를 쓰고 자바가 라이더를
+  DELIVERING 으로 바꾸기까지 1ms 남짓인데, 그 사이 취소가 오면 취소 쪽은 라이더가 아직 DELIVERING 이 아니라 못 푼다. 그래서 수락 쪽이
+  DELIVERING 으로 바꾼 뒤 보드를 한 번 더 읽고, CANCELLED 면 스스로 라이더를 풀고 410 을 준다. 어느 순서로 섞이든 둘 중 하나가 푼다.
+- 풀어줄 라이더는 두 군데서 찾는다. 제안을 들고 있던 라이더(보드가 OFFERED)는 `release-rider.lua` 로, 배달 중이던 라이더(DB 의 riderId,
+  없으면 보드가 ACCEPTED 였을 때의 라이더)는 `finish-delivery.lua` 로. 배달이 10분 넘게 걸리면 보드는 TTL 로 사라져 있어서 DB 를 먼저 본다.
+- FAILED 도 409 로 막았다. 기능 정의서는 DELIVERED 만 막는데, 배차를 포기한 주문을 취소할 이유가 없다. 이미 CANCELLED 면 200 이고 레디스 정리를 한 번 더 한다.
+
+OR-05 에서 확인한 것 (`./scripts/start.sh` 로 전부 띄우고, 라이더 6명이 좌표를 보내고)
+- 제안 중 취소: 라이더가 곧바로 `IDLE`, 찜 0. 12초 뒤 타이머가 와도 보드 CANCELLED, attempt 1 그대로. 재제안이 안 나갔다.
+- 수락 뒤 취소: 배달 중이던 라이더가 `IDLE`, 찜 0. 그 라이더가 픽업을 누르면 409. 배달 끝난 주문 취소는 409. 취소한 뒤 수락은 410.
+- **수락과 취소를 동시에 90번 날렸다.** 수락 지연을 0~150ms, 0~40ms 로 섞어서 수락이 먼저인 경우 12번, 취소가 먼저인 경우 58번이 나왔고
+  (20번은 지연 없이 전부 수락이 먼저), **취소된 주문을 들고 DELIVERING 으로 남은 라이더는 0명이었다.** 그중 2번은 수락 Lua 와 DELIVERING 사이에
+  취소가 끼어든 경우였고, 수락 쪽 재확인이 라이더를 풀었다. 재확인이 없었으면 이 2번은 라이더가 갇혔다.
+- [ ] 보드 TTL(10분)보다 order.created 를 늦게 읽으면(컨슈머가 10분 넘게 밀리면) 취소한 주문을 dispatch-engine 이 다시 배차할 수 있다.
+      dispatch-engine 이 DB 를 안 보기 때문이다. 5단계 카오스 테스트에서 컨슈머를 오래 멈춰볼 때 같이 볼 것.
 
 ### location-ingest
 - [x] `LI-01` `POST /api/riders/{riderId}/location` → `rider.location` (key = riderId)

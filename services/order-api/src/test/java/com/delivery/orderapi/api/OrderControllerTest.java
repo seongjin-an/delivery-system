@@ -5,6 +5,7 @@ import com.delivery.common.exception.ErrorCode;
 import com.delivery.common.web.CommonHeaders;
 import com.delivery.common.web.GlobalExceptionHandler;
 import com.delivery.orderapi.domain.DeliveryProgressService;
+import com.delivery.orderapi.domain.OrderCancelService;
 import com.delivery.orderapi.domain.OrderCreateService;
 import com.delivery.orderapi.domain.OrderQueryService;
 import com.delivery.orderapi.domain.OrderStatus;
@@ -64,6 +65,9 @@ class OrderControllerTest {
 
     @MockitoBean
     private DeliveryProgressService deliveryProgressService;
+
+    @MockitoBean
+    private OrderCancelService orderCancelService;
 
     @Test
     void returns201WhenOrderIsCreated() throws Exception {
@@ -223,5 +227,33 @@ class OrderControllerTest {
                         .content("{}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+    }
+
+    // ── OR-05 ─────────────────────────────────────────────────────────────
+
+    @Test
+    void cancelReturns200WithCancelled() throws Exception {
+        mockMvc.perform(post("/api/orders/{orderId}/cancel", ORDER_ID))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("CANCELLED"));
+    }
+
+    @Test
+    void cancelOfDeliveredOrderIs409() throws Exception {
+        willThrow(new BusinessException(ErrorCode.INVALID_STATE)).given(orderCancelService).cancel(ORDER_ID);
+
+        mockMvc.perform(post("/api/orders/{orderId}/cancel", ORDER_ID))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("INVALID_STATE"));
+    }
+
+    /** 배차가 한창이라 리스를 못 잡은 경우. 손님 앱은 503 을 보고 다시 누른다 */
+    @Test
+    void cancelDuringBusyDispatchIs503() throws Exception {
+        willThrow(new BusinessException(ErrorCode.DISPATCH_BUSY)).given(orderCancelService).cancel(ORDER_ID);
+
+        mockMvc.perform(post("/api/orders/{orderId}/cancel", ORDER_ID))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("DISPATCH_BUSY"));
     }
 }

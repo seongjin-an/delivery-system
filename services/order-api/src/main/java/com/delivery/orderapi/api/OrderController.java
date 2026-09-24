@@ -3,8 +3,10 @@ package com.delivery.orderapi.api;
 import com.delivery.common.response.ApiResponse;
 import com.delivery.common.web.CommonHeaders;
 import com.delivery.orderapi.domain.DeliveryProgressService;
+import com.delivery.orderapi.domain.OrderCancelService;
 import com.delivery.orderapi.domain.OrderCreateService;
 import com.delivery.orderapi.domain.OrderQueryService;
+import com.delivery.orderapi.domain.OrderStatus;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -25,6 +27,7 @@ public class OrderController {
     private final OrderCreateService orderCreateService;
     private final OrderQueryService orderQueryService;
     private final DeliveryProgressService deliveryProgressService;
+    private final OrderCancelService orderCancelService;
 
     /**
      * OR-01 주문 생성.
@@ -78,5 +81,15 @@ public class OrderController {
     public ApiResponse<ProgressResponse> complete(@PathVariable long orderId,
                                                   @Valid @RequestBody RiderActionRequest request) {
         return ApiResponse.ok(ProgressResponse.from(deliveryProgressService.complete(orderId, request.riderId())));
+    }
+
+    /**
+     * OR-05 취소. 배달 전이면 어디서든 된다. 이미 취소된 주문이면 200 (재시도).
+     * DELIVERED 나 FAILED 면 409, 배차가 한창이라 3초 안에 끼어들 틈이 없으면 503 이다.
+     */
+    @PostMapping("/{orderId}/cancel")
+    public ApiResponse<ProgressResponse> cancel(@PathVariable long orderId) {
+        orderCancelService.cancel(orderId);
+        return ApiResponse.ok(new ProgressResponse(orderId, OrderStatus.CANCELLED));
     }
 }

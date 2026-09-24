@@ -115,3 +115,10 @@ POST {{orderApi}}/api/orders/{{orderId}}/complete
 Content-Type: application/json
 
 { "riderId": {{riderId}} }
+
+### OR-05 취소 — 배달 전이면 어디서든. 이미 취소된 주문이면 200
+#   DELIVERED, FAILED 면 409. 배차가 한창이라 3초 안에 끼어들 틈이 없으면 503 DISPATCH_BUSY(다시 누르면 된다)
+# 확인: 제안을 들고 있던 라이더나 배달 중이던 라이더가 IDLE 로 풀렸는지, 보드가 CANCELLED 인지
+#   docker exec delivery-redis redis-cli HMGET rider:state:{riderId} status currentOrderId
+#   GET {{dispatchEngine}}/api/dispatch/{{orderId}}
+POST {{orderApi}}/api/orders/{{orderId}}/cancel
