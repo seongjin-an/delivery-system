@@ -464,10 +464,30 @@ NW 에서 확인한 것 (서비스 8개를 다 띄우고, 웹훅은 SM-04 가 �
 - [ ] 라이더가 실제로 움직이게 만들기 — 안 움직이면 이동거리 필터에 다 걸려 트래픽이 안 생긴다
 
 ### settlement-service
-- [ ] `SE-01` `delivery.completed` 소비 → `settlement_detail` + `settlement_daily`
+- [x] `SE-01` `delivery.completed` 소비 → `settlement_detail` + `settlement_daily`
       *`INSERT IGNORE` 로 detail 을 먼저 넣고, 영향 행이 1일 때만 daily 를 더한다.
       이 구조가 6단계 리플레이 멱등성의 핵심이다*
-- [ ] `SE-02` `GET /api/settlements`
+- [x] `SE-02` `GET /api/settlements`
+
+SE 에서 정한 것
+- **수수료 공식을 정했다.** 기능 정의서엔 `fee_krw` 컬럼만 있다. 기본 3,000원에 1km 를 넘으면 500m 마다 500원(올림).
+  2.3km 면 4,500원이다. 행마다 `fee_policy`(`v1-base3000`)를 남긴다. 공식을 바꾸고 리플레이할 때 `INSERT IGNORE` 가
+  옛 행을 건너뛰어서 금액이 안 바뀌는데(SE-03), 그때 옛 공식 행이 몇 개 남았는지를 `GROUP BY fee_policy` 한 번으로 본다.
+- **정산 날짜는 한국 날짜다.** `completedAt` 은 UTC 라 그대로 자르면 새벽 1시(KST) 배달이 전날(UTC 16시)로 간다.
+- **`INSERT IGNORE` 를 기능 정의서대로 쓰되, 넣기 전에 값을 본다.** `ON DUPLICATE KEY UPDATE` 는 MySQL 드라이버 기본 설정에서
+  중복이어도 영향 행 수를 1 로 돌려줘서 "0 이면 이미 집계한 주문" 판정이 통째로 깨진다. 대신 IGNORE 는 PK 중복만이 아니라
+  null 이나 값 넘침도 경고로 바꾸고 기본값을 넣는다. 그래서 틀린 이벤트는 넣기 전에 `BusinessException` 으로 DLT 에 보낸다.
+- daily 합계는 `VALUES()` 대신 `AS incoming` 문법으로 더한다. `VALUES()` 는 MySQL 8.0.20 부터 쓰지 말라고 나온다.
+- **`stop.sh` 가 서비스 이름을 받게 했다.** 기능 정의서 SE-03 절차의 1번이 `./scripts/stop.sh settlement-service` 인데
+  스크립트가 인자를 안 봐서, 치면 서비스 8개가 다 내려갔다. 이제 이름을 주면 그 서비스(추가 인스턴스 포함)만 내린다.
+
+SE 에서 확인한 것 — SE-01 완료 조건, 1단계 D1 의 마지막 조각 (`./scripts/start.sh` 로 전부 띄우고)
+- settlement 가 처음 붙으면서 토픽에 쌓여 있던 배달 170건을 집계했다. detail 170행, daily 건수 합 170, 수수료 합 양쪽 729,000원.
+- 시뮬레이터(#15 브랜치에서 jar 만 빌드해서)로 90초 돌리니 배달 162건이 실시간으로 들어와 332건이 됐다.
+  **DB 의 DELIVERED 주문 332건 = settlement_detail 332행.** D1 의 "settlement_daily 에 행이 쌓인다" 까지 사람 손 없이 이어졌다.
+- **리플레이:** daily 250행을 떠두고, SE-03 절차대로 settlement 만 멈추고 `--to-earliest` 로 리셋한 뒤 다시 띄웠다.
+  332건이 전부 다시 흘러와 `settlement_duplicate_total` 332, `settlement_recorded_total` 0. **daily 250행의 md5 가 전후 똑같았다.** 한 원도 안 달라졌다.
+- 단위 테스트에서 `if (inserted == 0) return false` 를 빼면 "같은 배달 두 번" 테스트가 실패하는 것도 확인했다. 기능 정의서가 말한 "정산이 두 배가 된다" 가 그 자리다.
 
 > DE-01~03 을 만들면서 정리한 문서 두 개
 > - [`.reference/dispatch-implementation.md`](.reference/dispatch-implementation.md) — 만들어보니 이랬다 (설계와 달라진 부분, 실측값)
