@@ -214,6 +214,12 @@ OR-07 을 붙이다가 고친 것
       `dispatch-engine` 의 `NO_CANDIDATE` 도 비슷하다 — 보드에 FAILED 를 쓴 뒤 발행이 실패하면 재시도 때 이미 FAILED 라 건너뛴다.
       제대로 하려면 레디스 쪽 아웃박스(발행할 이벤트를 같은 Lua 안에서 리스트에 넣고 따로 내보내기)가 필요하다. 5단계 카오스 때 볼 것.
 
+- **FAILED 주문의 attempt 가 0 으로 보였다.** `dispatch.failed` 에 attempt 가 없어서 OR-07 이 상태만 바꿨다. 다섯 번 제안하고
+  실패한 주문과 후보가 아예 없던 주문이 조회에서 똑같이 보여서 "왜 배차가 안 됐냐" 에 답을 못 한다. `DispatchFailed` 에
+  attempt 를 싣고 `OrderRepository.fail` 이 같이 쓰게 했다. relay 는 실제로 간 제안 수를, dispatch-engine(후보 없음, 전원 찜 당함)은 0 을 싣는다.
+  토픽에 남은 옛 이벤트는 attempt 가 없어서 0 으로 읽힌다(그걸 보는 테스트를 붙였다).
+  아무도 안 받는 주문을 실제로 넣어보니 조회에 `FAILED attempt=5`, 이벤트에 `"attempt":5` 가 실렸다.
+
 OR-07 에서 확인한 것 (`./scripts/start.sh` 로 전부 띄우고, 라이더 6명은 location-ingest 로 좌표를 보내고)
 - 아무도 안 받은 주문: 진행 중 `DISPATCHING`, 52.3초에 `FAILED`. timeline `CREATED → DISPATCHING(+1.9s) → FAILED(+52.3s)`.
 - 1순위 거절, 2순위 수락: `ASSIGNED`, riderId 채워짐, `attempt=2`. timeline `CREATED → DISPATCHING(+2.1s) → ASSIGNED(+4.3s)`.

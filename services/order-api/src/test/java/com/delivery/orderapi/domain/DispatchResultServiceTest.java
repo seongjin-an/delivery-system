@@ -62,21 +62,22 @@ class DispatchResultServiceTest {
     @Test
     void unknownOrderIsDroppedWithoutThrowing() {
         // 예외를 던지면 공통 에러 핸들러가 3번 재시도하고 DLT 로 보낸다. 없는 주문은 몇 번 해도 없다.
-        given(orderRepository.transition(anyLong(), anyCollection(), any(), any())).willReturn(0);
+        given(orderRepository.fail(anyLong(), anyCollection(), anyInt(), any())).willReturn(0);
         given(orderRepository.existsById(ORDER_ID)).willReturn(false);
 
-        assertThat(service.markFailed(ORDER_ID, "MAX_ATTEMPTS", ACCEPTED_AT)).isFalse();
+        assertThat(service.markFailed(ORDER_ID, 5, "MAX_ATTEMPTS", ACCEPTED_AT)).isFalse();
     }
 
+    /** 다섯 번 제안하고 실패했으면 조회에도 5 로 보여야 한다. 예전엔 0 이었다 */
     @Test
-    void failedOnlyFromBeforeResult() {
-        given(orderRepository.transition(anyLong(), anyCollection(), any(), any())).willReturn(1);
+    void failedOnlyFromBeforeResultAndKeepsAttempt() {
+        given(orderRepository.fail(anyLong(), anyCollection(), anyInt(), any())).willReturn(1);
 
-        service.markFailed(ORDER_ID, "MAX_ATTEMPTS", ACCEPTED_AT);
+        service.markFailed(ORDER_ID, 5, "MAX_ATTEMPTS", ACCEPTED_AT);
 
-        verify(orderRepository).transition(eq(ORDER_ID),
+        verify(orderRepository).fail(eq(ORDER_ID),
                 eq(java.util.EnumSet.of(OrderStatus.CREATED, OrderStatus.DISPATCHING)),
-                eq(OrderStatus.FAILED), any());
+                eq(5), any());
         verify(statusRecorder).record(ORDER_ID, OrderStatus.FAILED, ACCEPTED_AT);
     }
 

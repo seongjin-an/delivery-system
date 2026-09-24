@@ -193,7 +193,7 @@ class DispatchServiceTest {
         dispatchService.dispatch(order());
 
         verify(offerBoard).writeState(ORDER_ID, OfferState.FAILED);
-        verify(eventPublisher).publishFailed(ORDER_ID, "NO_CANDIDATE");
+        verify(eventPublisher).publishFailed(ORDER_ID, 0, "NO_CANDIDATE");
         verify(offerSender, never()).offerToNextCandidate(anyLong(), anyInt());
     }
 
@@ -206,7 +206,7 @@ class DispatchServiceTest {
 
         dispatchService.dispatch(order());
 
-        verify(eventPublisher).publishFailed(ORDER_ID, "ALL_CANDIDATES_TAKEN");
+        verify(eventPublisher).publishFailed(ORDER_ID, 0, "ALL_CANDIDATES_TAKEN");
         verify(eventPublisher, never()).publishDispatching(anyLong());
     }
 

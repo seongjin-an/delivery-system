@@ -53,6 +53,25 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
                 @Param("to") OrderStatus to,
                 @Param("now") Instant now);
 
+    /**
+     * FAILED 로 갈 때는 attempt 도 같이 채운다. 조건은 transition 과 같다.
+     *
+     * <p>예전엔 transition 으로 상태만 바꿔서, 다섯 번 제안하고 실패한 주문도 조회하면 attempt 0 이었다.
+     * "한 번도 시도 안 했다" 와 "다섯 번 다 안 받았다" 가 같아 보이면 고객 문의에 답을 못 한다.
+     */
+    @Modifying(clearAutomatically = true)
+    @Query("""
+            UPDATE Order o
+               SET o.status = com.delivery.orderapi.domain.OrderStatus.FAILED,
+                   o.attempt = :attempt, o.updatedAt = :now
+             WHERE o.orderId = :orderId
+               AND o.status IN :from
+            """)
+    int fail(@Param("orderId") long orderId,
+             @Param("from") Collection<OrderStatus> from,
+             @Param("attempt") int attempt,
+             @Param("now") Instant now);
+
     /** ASSIGNED 로 갈 때는 라이더와 attempt 도 같이 채운다. 조건은 transition 과 같다 */
     @Modifying(clearAutomatically = true)
     @Query("""

@@ -107,7 +107,18 @@ class OrderRepositoryMysqlTest {
         long orderId = givenOrder(OrderStatus.CANCELLED);
 
         assertThat(orderRepository.assign(orderId, BEFORE_RESULT, RIDER_ID, 1, Instant.now())).isZero();
-        assertThat(orderRepository.transition(orderId, BEFORE_RESULT, OrderStatus.FAILED, Instant.now())).isZero();
+        assertThat(orderRepository.fail(orderId, BEFORE_RESULT, 5, Instant.now())).isZero();
+    }
+
+    @Test
+    void failKeepsHowManyOffersWentOut() {
+        long orderId = givenOrder(OrderStatus.DISPATCHING);
+
+        assertThat(orderRepository.fail(orderId, BEFORE_RESULT, 5, Instant.now())).isEqualTo(1);
+
+        Order order = orderRepository.findById(orderId).orElseThrow();
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.FAILED);
+        assertThat(order.getAttempt()).isEqualTo(5);
     }
 
     // ── OR-03, OR-04 의 advance ───────────────────────────────────────────

@@ -65,9 +65,13 @@ public class DispatchEventPublisher {
                 new OrderStatusChanged(orderId, riderId, "ASSIGNED", now));
     }
 
-    /** 후보를 다 썼는데 아무도 안 받았다 */
-    public void publishFailed(long orderId, String reason) {
-        publish(KafkaTopics.DISPATCH_FAILED, orderId, new DispatchFailed(orderId, reason, Times.now()));
+    /**
+     * 배차를 포기했다.
+     *
+     * @param attempt 라이더에게 실제로 간 제안 수. order-api 가 주문 조회의 attempt 로 보여준다
+     */
+    public void publishFailed(long orderId, int attempt, String reason) {
+        publish(KafkaTopics.DISPATCH_FAILED, orderId, new DispatchFailed(orderId, attempt, reason, Times.now()));
     }
 
     private void publish(String topic, long orderId, Object payload) {

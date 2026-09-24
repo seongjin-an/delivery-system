@@ -113,7 +113,7 @@ public class OfferRelayService {
 
     private void fail(long orderId, int attempt, String reason) {
         offerBoard.writeState(orderId, OfferState.FAILED);
-        eventPublisher.publishFailed(orderId, reason);
+        eventPublisher.publishFailed(orderId, attempt, reason);
         log.info("배차 실패: orderId={} attempt={} 이유={}", orderId, attempt, reason);
     }
 
