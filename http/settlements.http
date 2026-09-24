@@ -1,0 +1,25 @@
+### SE-02 정산 조회 — 날짜는 한국 날짜(yyyy-MM-dd). 한 번에 92일까지
+# riderId 는 시뮬레이터가 만든 라이더 아이디를 넣는다. 아무 라이더나 보려면:
+#   docker exec delivery-mysql mysql -udev_user -pdev_password delivery -e "select rider_id, settle_date, order_count, fee_sum from settlement_daily order by fee_sum desc limit 5"
+GET {{settlement}}/api/settlements?riderId={{riderId}}&from=2026-09-24&to=2026-09-24
+
+### 정산 지표
+#   settlement_recorded_total   처음 본 배달이라 합계에 더한 수
+#   settlement_duplicate_total  이미 집계한 배달이라 건너뛴 수. 리플레이하면 이게 오른다. 평소에 오르면 같은 이벤트가 두 번 오고 있다
+GET {{settlement}}/actuator/prometheus
+
+### SE-03 리플레이 — 합계가 한 원도 안 바뀌어야 한다
+#   1) 떠두기
+#      docker exec delivery-mysql mysql -udev_user -pdev_password delivery -N -e "select * from settlement_daily order by rider_id, settle_date" | md5
+#   2) settlement 만 멈추기 (예전엔 이 명령이 서비스를 전부 내렸다)
+#      ./scripts/stop.sh settlement-service
+#   3) 오프셋을 처음으로
+#      docker exec delivery-kafka kafka-consumer-groups --bootstrap-server localhost:9094 \
+#        --group settlement --reset-offsets --to-earliest --topic delivery.completed --execute
+#   4) 다시 띄우고 lag 가 0 이 될 때까지 기다린 뒤 1) 을 다시 해서 비교한다
+#      ./scripts/restart.sh settlement-service
+#
+# 수수료 공식을 바꾼 뒤라면 3) 앞에 두 테이블을 비워야 새 공식으로 다시 계산된다. INSERT IGNORE 가 있는 행을 건너뛰어서다.
+#   DELETE FROM settlement_detail; DELETE FROM settlement_daily;
+# 옛 공식 행이 남았는지는 이걸로 본다:
+#   select fee_policy, count(*) from settlement_detail group by fee_policy
