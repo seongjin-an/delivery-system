@@ -372,6 +372,65 @@ class DispatchScriptsRedisTest {
         });
     }
 
+    // ── cancel-offer.lua (OR-05) ──────────────────────────────────────────
+
+    @Test
+    void cancelOfLiveOfferTellsWhoWasHoldingIt() {
+        run((context, redis) -> {
+            OfferBoard board = context.getBean(OfferBoard.class);
+            board.writeOffered(orderId, offerId, riderId, 2, 1000L);
+
+            OfferBoard.Cancellation cancelled = board.cancel(orderId, 3000L);
+
+            assertThat(cancelled.previous()).isEqualTo(OfferState.OFFERED);
+            assertThat(cancelled.riderId()).isEqualTo(riderId);
+            assertThat(cancelled.offerId()).isEqualTo(offerId);
+            assertThat(board.read(orderId).state()).isEqualTo(OfferState.CANCELLED);
+        });
+    }
+
+    /** 취소한 뒤 라이더가 수락을 누르면 410 이어야 한다. 수락이 먼저 이기면 취소된 주문에 배차된다 */
+    @Test
+    void acceptAfterCancelIsRefused() {
+        run((context, redis) -> {
+            OfferBoard board = context.getBean(OfferBoard.class);
+            board.writeOffered(orderId, offerId, riderId, 1, 1000L);
+            board.cancel(orderId, 3000L);
+
+            assertThat(board.respond(orderId, offerId, riderId, OfferState.ACCEPTED, 4000L).isApplied()).isFalse();
+            assertThat(board.read(orderId).state()).isEqualTo(OfferState.CANCELLED);
+        });
+    }
+
+    /** 10초 타이머가 뒤늦게 와도 재제안하지 않는다 (기능 정의서 OR-05 규칙 2번) */
+    @Test
+    void expiryAfterCancelDoesNotReoffer() {
+        run((context, redis) -> {
+            OfferBoard board = context.getBean(OfferBoard.class);
+            board.writeOffered(orderId, offerId, riderId, 1, 1000L);
+            board.cancel(orderId, 3000L);
+
+            assertThat(board.expire(orderId, offerId, 11000L)).isEqualTo(ExpiryDecision.CLOSED);
+        });
+    }
+
+    /**
+     * 아직 제안이 한 번도 안 나간 주문을 취소한 경우. 보드를 안 만들면 뒤늦게 order.created 를 읽은 dispatch-engine 이
+     * "처음 보는 주문" 으로 보고 배차를 시작한다. TTL 도 붙어야 한다 — 안 붙으면 취소한 주문 수만큼 키가 영원히 쌓인다.
+     */
+    @Test
+    void cancelBeforeAnyOfferLeavesCancelledBoardWithTtl() {
+        run((context, redis) -> {
+            OfferBoard board = context.getBean(OfferBoard.class);
+
+            OfferBoard.Cancellation cancelled = board.cancel(orderId, 3000L);
+
+            assertThat(cancelled.previous()).isNull();
+            assertThat(board.read(orderId).state()).isEqualTo(OfferState.CANCELLED);
+            assertThat(redis.getExpire(RedisKeys.offer(orderId))).isPositive();
+        });
+    }
+
     // ── save-candidates.lua (DE-02) ───────────────────────────────────────
 
     @Test

@@ -7,9 +7,11 @@ import com.delivery.common.dispatch.OfferBoard;
 import com.delivery.common.dispatch.OfferDecision;
 import com.delivery.common.dispatch.OfferSnapshot;
 import com.delivery.common.dispatch.OfferState;
+import com.delivery.common.dispatch.RiderLock;
 import com.delivery.common.dispatch.RiderState;
 import com.delivery.common.event.DispatchOffer;
 import com.delivery.common.exception.BusinessException;
+import com.delivery.common.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,6 +35,7 @@ public class OfferResponseService {
 
     private final OfferBoard offerBoard;
     private final RiderState riderState;
+    private final RiderLock riderLock;
     private final DispatchEventPublisher eventPublisher;
     private final RabbitTemplate rabbitTemplate;
 
@@ -50,6 +53,18 @@ public class OfferResponseService {
         Settled settled = settle(offerId, riderId, OfferState.ACCEPTED);
 
         riderState.markDelivering(riderId, settled.orderId());
+
+        // 수락 Lua 와 markDelivering 사이에 손님이 취소하면(OR-05) 취소 쪽은 라이더가 아직 DELIVERING 이 아니라서
+        // 못 풀어준다. 그대로 두면 취소된 주문 때문에 라이더가 영영 DELIVERING 으로 남는다.
+        // 그래서 여기서 한 번 더 본다. 취소가 먼저였으면 우리가 풀고, 우리가 먼저였으면 취소 쪽이 푼다.
+        OfferSnapshot after = offerBoard.read(settled.orderId());
+        if (after != null && after.state() == OfferState.CANCELLED) {
+            riderState.finishDelivery(riderId, settled.orderId());
+            riderLock.release(riderId, settled.orderId());
+            log.info("수락하는 사이 주문이 취소됐다: orderId={} riderId={} offerId={}", settled.orderId(), riderId, offerId);
+            throw new BusinessException(ErrorCode.OFFER_EXPIRED, "주문이 취소됐어요");
+        }
+
         eventPublisher.publishAssigned(settled.orderId(), riderId, offerId, settled.attempt());
 
         log.info("배차 확정: orderId={} riderId={} offerId={} attempt={}",

@@ -6,6 +6,7 @@ import com.delivery.common.dispatch.OfferBoard;
 import com.delivery.common.dispatch.OfferDecision;
 import com.delivery.common.dispatch.OfferSnapshot;
 import com.delivery.common.dispatch.OfferState;
+import com.delivery.common.dispatch.RiderLock;
 import com.delivery.common.dispatch.RiderState;
 import com.delivery.common.event.DispatchOffer;
 import com.delivery.common.exception.BusinessException;
@@ -44,6 +45,7 @@ class OfferResponseServiceTest {
 
     @Mock private OfferBoard offerBoard;
     @Mock private RiderState riderState;
+    @Mock private RiderLock riderLock;
     @Mock private DispatchEventPublisher eventPublisher;
     @Mock private RabbitTemplate rabbitTemplate;
 
@@ -52,7 +54,7 @@ class OfferResponseServiceTest {
     @BeforeEach
     void setUp() {
         offerResponseService = new OfferResponseService(
-                offerBoard, riderState, eventPublisher, rabbitTemplate);
+                offerBoard, riderState, riderLock, eventPublisher, rabbitTemplate);
 
         given(offerBoard.findOrderId(OFFER_ID)).willReturn(ORDER_ID);
         given(offerBoard.read(ORDER_ID))
@@ -197,5 +199,25 @@ class OfferResponseServiceTest {
 
         assertThat(rejection.orderId()).isEqualTo(ORDER_ID);
         verify(riderState).release(RIDER_ID, ORDER_ID, OFFER_ID);
+    }
+
+    /**
+     * 수락 Lua 가 이긴 직후 손님이 취소한 경우(OR-05). 취소 쪽은 라이더가 아직 DELIVERING 이 아니라 못 풀어준다.
+     * 여기서 다시 보고 풀지 않으면 취소된 주문 때문에 라이더가 영영 DELIVERING 으로 남는다.
+     */
+    @Test
+    void cancelledRightAfterAcceptReleasesRiderAndSendsNoAssignment() {
+        givenDecision(OfferState.ACCEPTED, OfferDecision.APPLIED);
+        given(offerBoard.read(ORDER_ID)).willReturn(
+                new OfferSnapshot(OFFER_ID, RIDER_ID, OfferState.ACCEPTED, ATTEMPT, 0L),
+                new OfferSnapshot(OFFER_ID, RIDER_ID, OfferState.CANCELLED, ATTEMPT, 0L));
+
+        assertThatThrownBy(() -> offerResponseService.accept(OFFER_ID, RIDER_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).errorCode()).isEqualTo(ErrorCode.OFFER_EXPIRED);
+
+        verify(riderState).finishDelivery(RIDER_ID, ORDER_ID);
+        verify(riderLock).release(RIDER_ID, ORDER_ID);
+        verify(eventPublisher, never()).publishAssigned(anyLong(), anyLong(), anyLong(), anyInt());
     }
 }

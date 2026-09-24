@@ -25,6 +25,8 @@ import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.kafka.core.KafkaTemplate;
 
+import java.util.List;
+
 /**
  * 배차 공용 부품을 빈으로 올린다. dispatch-engine 과 offer-relay 가 같은 것을 받는다.
  *
@@ -72,12 +74,22 @@ public class CommonDispatchAutoConfiguration {
         static final RedisScript<Long> RESPOND_OFFER = load("lua/respond-offer.lua");
         /** RE-02 만료 판정 */
         static final RedisScript<Long> EXPIRE_OFFER = load("lua/expire-offer.lua");
+        /** OR-05 취소. 반환이 목록이라 이것만 타입이 다르다 */
+        static final RedisScript<List> CANCEL_OFFER = loadList("lua/cancel-offer.lua");
         /** DE-02 후보 목록 저장 */
         static final RedisScript<Long> SAVE_CANDIDATES = load("lua/save-candidates.lua");
         /** DE-05 / RE-02 라이더 놓아주기 */
         static final RedisScript<Long> RELEASE_RIDER = load("lua/release-rider.lua");
         /** OR-04 배달 끝난 라이더 놓아주기 */
         static final RedisScript<Long> FINISH_DELIVERY = load("lua/finish-delivery.lua");
+
+        @SuppressWarnings("rawtypes")
+        private static RedisScript<List> loadList(String path) {
+            DefaultRedisScript<List> script = new DefaultRedisScript<>();
+            script.setLocation(new ClassPathResource(path));
+            script.setResultType(List.class);
+            return script;
+        }
 
         private static RedisScript<Long> load(String path) {
             DefaultRedisScript<Long> script = new DefaultRedisScript<>();
@@ -91,7 +103,7 @@ public class CommonDispatchAutoConfiguration {
         @ConditionalOnBean(StringRedisTemplate.class)
         @ConditionalOnMissingBean
         OfferBoard offerBoard(StringRedisTemplate redis, OfferProperties properties) {
-            return new OfferBoard(redis, RESPOND_OFFER, EXPIRE_OFFER, properties);
+            return new OfferBoard(redis, RESPOND_OFFER, EXPIRE_OFFER, CANCEL_OFFER, properties);
         }
 
         @Bean
