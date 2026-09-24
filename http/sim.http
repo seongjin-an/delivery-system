@@ -1,0 +1,23 @@
+### SM-01 시뮬레이션 시작 — 본문을 비우면 application.yml 기본값(라이더 1000명, 주문 초당 20건)으로 돈다
+# 처음엔 작게 돌린다. 반경을 줄이면 배차 검색 반경(3km) 안에 라이더가 촘촘해진다.
+# 실제로 이 값으로 90초 돌렸더니 수락 85건이 전부 배달 완료까지 갔다.
+POST {{simulator}}/sim/start
+Content-Type: application/json
+
+{ "riders": 100, "ordersPerSec": 1, "spreadKm": 2, "durationSec": 90 }
+
+### 1단계 완료 조건 D2 — 아무도 안 받으면 attempt 가 5 까지 가고 FAILED
+# 주문 하나가 FAILED 가 되기까지 50초쯤 걸린다 (10초 × 5).
+POST {{simulator}}/sim/start
+Content-Type: application/json
+
+{ "riders": 20, "ordersPerSec": 0.2, "acceptRate": 0, "rejectRate": 0, "spreadKm": 1, "durationSec": 75 }
+
+### SM-03 상태
+# offersReceived 가 ordersCreated 보다 훨씬 크면 재제안이 많다는 뜻이다.
+# accepted 는 수락하기로 정한 수고, 끝까지 갔는지는 delivered 로 본다.
+# failures 에 accept:OFFER_EXPIRED 가 쌓이면 acceptDelayMs 가 길거나 알림이 늦게 가는 거다 (notify.http 의 prefetch 참고).
+GET {{simulator}}/sim/status
+
+### SM-02 정지 — 새 주문과 좌표만 멈춘다. 이미 수락한 배달은 완료까지 마저 부른다(최대 35초)
+POST {{simulator}}/sim/stop
