@@ -13,16 +13,25 @@ delivery:
     # 부하 대상. location-ingest 를 여러 개 띄우면 앞에 nginx 를 두고 그 주소를 넣는다.
     ingest-url: ${INGEST_URL:http://localhost:8091}
     order-url: ${ORDER_URL:http://localhost:8090}
+    dispatch-url: ${DISPATCH_URL:http://localhost:8093}
+    # 아래는 POST /sim/start 본문에서 빠진 값의 기본값이다 (기능 정의서 SM-01 요청 예시와 같다)
     riders: 1000
     location-interval-ms: 3000
     orders-per-sec: 20
-    # 라이더가 제안을 수락할 확률 / 수락까지 걸리는 시간
+    # 수락 60%, 즉시 거절 20%, 나머지 20% 는 무응답. 세 경로를 다 타봐야 한다
     accept-rate: 0.6
+    reject-rate: 0.2
     accept-delay-ms: 2000
+    # 시간을 압축한다. 실제로는 픽업까지 10분, 배달까지 20분쯤인데 그걸 기다릴 수는 없다
+    pickup-delay-ms: 5000
+    complete-delay-ms: 30000
     # 서울 중심 좌표 기준으로 흩뿌린다
     center-lat: 37.5665
     center-lng: 126.9780
     spread-km: 8
+    speed-kmh: 20
+    # 0 이면 /sim/stop 을 부를 때까지 돈다
+    duration-sec: 0
 
 management:
   endpoints:
