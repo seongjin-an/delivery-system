@@ -67,7 +67,8 @@ public class DispatchService {
                 log.info("반경 {}m 안에 한가한 라이더가 없다: orderId={} zone={}",
                         properties.searchRadiusMeters(), orderId, order.zoneId());
                 offerBoard.writeState(orderId, OfferState.FAILED);
-                eventPublisher.publishFailed(orderId, "NO_CANDIDATE");
+                // 제안이 한 건도 안 나갔다. attempt 는 0 이다
+                eventPublisher.publishFailed(orderId, 0, "NO_CANDIDATE");
                 return;
             }
 
@@ -78,7 +79,7 @@ public class DispatchService {
                 // 후보는 있었는데 전부 다른 주문에 찜당했거나 발행이 실패했다.
                 log.info("후보 {}명을 다 시도했는데 제안을 못 보냈다: orderId={}", candidates.size(), orderId);
                 offerBoard.writeState(orderId, OfferState.FAILED);
-                eventPublisher.publishFailed(orderId, "ALL_CANDIDATES_TAKEN");
+                eventPublisher.publishFailed(orderId, 0, "ALL_CANDIDATES_TAKEN");
                 return;
             }
 

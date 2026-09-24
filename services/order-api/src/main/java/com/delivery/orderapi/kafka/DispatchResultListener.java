@@ -33,7 +33,7 @@ public class DispatchResultListener {
     @KafkaListener(topics = KafkaTopics.DISPATCH_FAILED)
     public void onFailed(String payload, Acknowledgment ack) {
         DispatchFailed event = JsonUtil.fromJson(payload, DispatchFailed.class);
-        dispatchResultService.markFailed(event.orderId(), event.reason(), event.at());
+        dispatchResultService.markFailed(event.orderId(), event.attempt(), event.reason(), event.at());
         ack.acknowledge();
     }
 

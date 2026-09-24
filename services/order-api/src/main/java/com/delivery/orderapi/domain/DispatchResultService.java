@@ -55,10 +55,10 @@ public class DispatchResultService {
     }
 
     @Transactional
-    public boolean markFailed(long orderId, String reason, Instant at) {
-        int changed = orderRepository.transition(orderId, BEFORE_RESULT, OrderStatus.FAILED, Times.now());
+    public boolean markFailed(long orderId, int attempt, String reason, Instant at) {
+        int changed = orderRepository.fail(orderId, BEFORE_RESULT, attempt, Times.now());
         if (changed == 1) {
-            log.info("배차 실패: orderId={} reason={}", orderId, reason);
+            log.info("배차 실패: orderId={} attempt={} reason={}", orderId, attempt, reason);
         }
         return afterUpdate(orderId, changed, OrderStatus.FAILED, at);
     }

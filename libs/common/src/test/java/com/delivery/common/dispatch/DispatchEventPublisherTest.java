@@ -32,7 +32,7 @@ class DispatchEventPublisherTest {
         given(kafkaTemplate.send(eq(KafkaTopics.DISPATCH_FAILED), anyString(), anyString()))
                 .willReturn(CompletableFuture.failedFuture(new TimeoutException("브로커 응답 없음")));
 
-        assertThatThrownBy(() -> publisher.publishFailed(1L, "MAX_ATTEMPTS"))
+        assertThatThrownBy(() -> publisher.publishFailed(1L, 5, "MAX_ATTEMPTS"))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining(KafkaTopics.DISPATCH_FAILED);
     }

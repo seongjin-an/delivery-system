@@ -122,7 +122,7 @@ class OfferRelayServiceTest {
         relayService.relay(expired(1));
 
         verify(offerSender, never()).offerToNextCandidate(anyLong(), anyInt());
-        verify(eventPublisher, never()).publishFailed(anyLong(), anyString());
+        verify(eventPublisher, never()).publishFailed(anyLong(), anyInt(), anyString());
     }
 
     @Test
@@ -156,7 +156,7 @@ class OfferRelayServiceTest {
         relayService.relay(expired(MAX_ATTEMPTS));
 
         verify(offerBoard).writeState(ORDER_ID, OfferState.FAILED);
-        verify(eventPublisher).publishFailed(ORDER_ID, "MAX_ATTEMPTS");
+        verify(eventPublisher).publishFailed(ORDER_ID, 5, "MAX_ATTEMPTS");
         verify(offerSender, never()).offerToNextCandidate(anyLong(), anyInt());
     }
 
@@ -169,7 +169,7 @@ class OfferRelayServiceTest {
         relayService.relay(expired(2));
 
         verify(offerBoard).writeState(ORDER_ID, OfferState.FAILED);
-        verify(eventPublisher).publishFailed(ORDER_ID, "NO_CANDIDATE_LEFT");
+        verify(eventPublisher).publishFailed(eq(ORDER_ID), anyInt(), eq("NO_CANDIDATE_LEFT"));
     }
 
     /** 마지막 제안이 나가기 전에 라이더는 반드시 놓여나야 한다. 안 그러면 12초를 논다 */

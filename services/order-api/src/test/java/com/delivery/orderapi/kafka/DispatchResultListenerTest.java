@@ -62,11 +62,20 @@ class DispatchResultListenerTest {
 
     @Test
     void readsFailedAsPublished() {
-        publisher.publishFailed(ORDER_ID, "MAX_ATTEMPTS");
+        publisher.publishFailed(ORDER_ID, 5, "MAX_ATTEMPTS");
 
         listener.onFailed(sent(KafkaTopics.DISPATCH_FAILED), ack);
 
-        verify(service).markFailed(eq(ORDER_ID), eq("MAX_ATTEMPTS"), notNull());
+        verify(service).markFailed(eq(ORDER_ID), eq(5), eq("MAX_ATTEMPTS"), notNull());
+    }
+
+    /** attempt 를 싣기 전에 나간 이벤트가 토픽에 남아 있다. 새 order-api 가 그걸 읽다 죽으면 안 된다 */
+    @Test
+    void readsOldFailedEventWithoutAttemptAsZero() {
+        listener.onFailed("{\"orderId\":" + ORDER_ID + ",\"reason\":\"MAX_ATTEMPTS\",\"at\":\"2026-09-23T00:15:45.368Z\"}", ack);
+
+        verify(service).markFailed(eq(ORDER_ID), eq(0), eq("MAX_ATTEMPTS"), notNull());
+        verify(ack).acknowledge();
     }
 
     @Test
