@@ -39,7 +39,9 @@ public class OfferNotifyListener {
                 .description("notify.push 에 못 넣고 버린 제안 알림 수").register(registry);
     }
 
-    @RabbitListener(queues = RabbitTopology.Q_OFFER_NOTIFY)
+    @RabbitListener(queues = RabbitTopology.Q_OFFER_NOTIFY,
+            // 2단계 실험: transport=kafka 면 kafka 패키지의 리스너가 대신 받는다
+            autoStartup = "#{'${delivery.offer.transport:rabbit}' == 'rabbit'}")
     public void onOffer(DispatchOffer offer, Channel channel,
                         @Header(AmqpHeaders.DELIVERY_TAG) long deliveryTag) throws IOException {
         try {

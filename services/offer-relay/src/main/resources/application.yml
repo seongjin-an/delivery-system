@@ -37,6 +37,14 @@ spring:
         default-requeue-rejected: false
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9094}
+    # 2단계 실험: transport=kafka 일 때만 컨슈머가 뜬다 (타이머, 만료 처리)
+    consumer:
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      auto-offset-reset: earliest    # 만료를 하나라도 흘리면 그 주문은 배차 중에 멈춘다
+      enable-auto-commit: false
+    listener:
+      ack-mode: manual
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
@@ -45,6 +53,9 @@ spring:
       observation-enabled: true
 
 delivery:
+  offer:
+    # rabbit | kafka. 2단계 실험 스위치 — 제안을 어느 브로커로 보낼지
+    transport: ${OFFER_TRANSPORT:rabbit}
   relay:
     # 이 횟수까지 제안했는데 아무도 안 받으면 dispatch.failed 로 넘긴다.
     # 10초짜리 제안이 다섯 번이면 50초다. 손님이 앱을 보고 있는데 1분 넘게 "배차 중" 이면

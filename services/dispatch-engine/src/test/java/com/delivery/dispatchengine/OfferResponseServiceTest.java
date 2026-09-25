@@ -1,8 +1,8 @@
 package com.delivery.dispatchengine;
 
-import com.delivery.common.RabbitTopology;
 import com.delivery.common.dispatch.DispatchEventPublisher;
 import com.delivery.common.dispatch.OfferBoard;
+import com.delivery.common.dispatch.OfferChannel;
 import com.delivery.common.dispatch.OfferDecision;
 import com.delivery.common.dispatch.OfferSnapshot;
 import com.delivery.common.dispatch.OfferState;
@@ -20,7 +20,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -47,14 +46,14 @@ class OfferResponseServiceTest {
     @Mock private RiderState riderState;
     @Mock private RiderLock riderLock;
     @Mock private DispatchEventPublisher eventPublisher;
-    @Mock private RabbitTemplate rabbitTemplate;
+    @Mock private OfferChannel offerChannel;
 
     private OfferResponseService offerResponseService;
 
     @BeforeEach
     void setUp() {
         offerResponseService = new OfferResponseService(
-                offerBoard, riderState, riderLock, eventPublisher, rabbitTemplate);
+                offerBoard, riderState, riderLock, eventPublisher, offerChannel);
 
         given(offerBoard.findOrderId(OFFER_ID)).willReturn(ORDER_ID);
         given(offerBoard.read(ORDER_ID))
@@ -164,8 +163,7 @@ class OfferResponseServiceTest {
         offerResponseService.reject(OFFER_ID, RIDER_ID);
 
         ArgumentCaptor<DispatchOffer> sent = ArgumentCaptor.forClass(DispatchOffer.class);
-        verify(rabbitTemplate).convertAndSend(
-                eq(RabbitTopology.DISPATCH_DLX), eq(RabbitTopology.RK_OFFER_EXPIRED), sent.capture());
+        verify(offerChannel).expireNow(sent.capture());
 
         assertThat(sent.getValue().orderId()).isEqualTo(ORDER_ID);
         assertThat(sent.getValue().offerId()).isEqualTo(OFFER_ID);
@@ -182,7 +180,7 @@ class OfferResponseServiceTest {
                 .extracting("errorCode").isEqualTo(ErrorCode.OFFER_EXPIRED);
 
         verify(riderState, never()).release(anyLong(), anyLong(), anyLong());
-        verify(rabbitTemplate, never()).convertAndSend(anyString(), anyString(), any(Object.class));
+        verify(offerChannel, never()).expireNow(any());
     }
 
     /**
@@ -193,7 +191,7 @@ class OfferResponseServiceTest {
     void stillSucceedsWhenHandOverFails() {
         givenDecision(OfferState.REJECTED, OfferDecision.APPLIED);
         willThrow(new IllegalStateException("브로커가 죽었다"))
-                .given(rabbitTemplate).convertAndSend(anyString(), anyString(), any(Object.class));
+                .given(offerChannel).expireNow(any());
 
         OfferResponseService.Rejection rejection = offerResponseService.reject(OFFER_ID, RIDER_ID);
 

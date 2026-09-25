@@ -2,6 +2,7 @@ package com.delivery.common.autoconfigure;
 
 import com.delivery.common.dispatch.DispatchEventPublisher;
 import com.delivery.common.dispatch.OfferBoard;
+import com.delivery.common.dispatch.OfferChannel;
 import com.delivery.common.dispatch.OfferSender;
 import com.delivery.common.dispatch.RiderState;
 import org.junit.jupiter.api.Test;
@@ -51,7 +52,7 @@ class CommonDispatchAutoConfigurationTest {
                 .run(context -> {
                     assertThat(context).hasNotFailed();
                     assertThat(context).hasSingleBean(OfferBoard.class);
-                    assertThat(context).doesNotHaveBean(OfferSender.class);
+                    assertThat(context).doesNotHaveBean(OfferChannel.class);
                 });
     }
 

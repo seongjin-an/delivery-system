@@ -7,13 +7,9 @@ import com.delivery.common.event.DispatchOffer;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.amqp.rabbit.connection.CachingConnectionFactory;
-import org.springframework.amqp.rabbit.connection.CorrelationData;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.beans.factory.ObjectProvider;
 
-import java.time.Duration;
 import java.time.Instant;
-import java.util.concurrent.TimeUnit;
 
 /**
  * DE-03 제안 발송. 후보 목록에서 하나씩 꺼내 라이더를 찜하고 래빗엠큐로 제안을 던진다.
@@ -26,10 +22,7 @@ public class OfferSender {
 
     private static final Logger log = LoggerFactory.getLogger(OfferSender.class);
 
-    /** publisher confirm 을 기다리는 한도 */
-    private static final Duration CONFIRM_TIMEOUT = Duration.ofSeconds(5);
-
-    private final RabbitTemplate rabbitTemplate;
+    private final ObjectProvider<OfferChannel> channelProvider;
     private final OfferBoard offerBoard;
     private final CandidateList candidateList;
     private final RiderLock riderLock;
@@ -70,8 +63,6 @@ public class OfferSender {
     }
 
     private DispatchOffer publish(long orderId, long riderId, int attempt) {
-        requirePublisherConfirms();
-
         // 재제안할 때마다 새 offerId 를 만든다. 펜싱 규칙(기능 정의서 3.9)이 이걸로 판정한다 —
         // 옛 타이머 메시지가 뒤늦게 도착해도 offerId 가 달라서 버려진다.
         long offerId = Ids.newId();
@@ -81,16 +72,8 @@ public class OfferSender {
         riderState.markOffered(riderId, offerId);
 
         DispatchOffer offer = new DispatchOffer(offerId, orderId, riderId, attempt, offeredAt);
-        CorrelationData confirm = new CorrelationData(Long.toString(offerId));
 
-        // 익스체인지에 한 번만 발행한다. 알림 큐와 타이머 큐 양쪽에 브로커가 복제해준다.
-        // 코드에서 두 번 발행하면 한쪽만 성공하는 경우가 생기는데, 그게 둘 다 사고다 —
-        // 알림만 가면 안 받았을 때 아무도 모르고, 타이머만 있으면 라이더는 제안이 온 줄도
-        // 모르는데 10초 뒤에 거절한 걸로 처리된다.
-        rabbitTemplate.convertAndSend(
-                RabbitTopology.DISPATCH_EXCHANGE, RabbitTopology.RK_OFFER_CREATED, offer, confirm);
-
-        if (!confirmed(confirm, orderId, riderId)) {
+        if (!channel().send(offer)) {
             // 브로커가 못 받았다. 되돌려놓고 다음 후보로 간다. 안 되돌리면 보드에 OFFERED 가
             // 남아서, 아무한테도 안 간 제안을 다음 시도가 "진행 중" 으로 오해한다.
             offerBoard.clear(orderId, offerId);
@@ -104,49 +87,16 @@ public class OfferSender {
     }
 
     /**
-     * publisher confirm 이 꺼져 있으면 여기서 바로 끝낸다.
+     * 2단계 실험: 래빗엠큐인지 카프카인지는 delivery.offer.transport 로 고른다.
      *
-     * <p>실제로 한 번 당했다. dispatch-engine yml 에만 {@code publisher-confirm-type: correlated}
-     * 가 있고 offer-relay 에는 없었는데, 이 클래스를 공용으로 옮기면서 그 전제가 같이 안 따라왔다.
-     * 증상이 고약했다 — 확인 future 가 영영 안 끝나서 후보 한 명당 5초씩 타임아웃이 나고,
-     * 실패로 판정해 다음 후보로 넘어간다. 그래서 라이더 6명이 25초 만에 전부 타버리고
-     * 배차가 실패했다. 로그에는 "제안 발행 확인 실패" 만 찍혀서 브로커 문제처럼 보인다.
-     *
-     * <p>기동할 때 막지 않고 여기서 막는 이유는 notification-worker 다. 걔도 레디스와
-     * 래빗엠큐를 둘 다 써서 이 빈이 같이 만들어지는데, 제안을 보낼 일은 없다. 기동을 막으면
-     * 필요도 없는 설정을 넣으라고 강요하게 된다.
+     * <p>기동할 때 안 받고 쓸 때 꺼내는 건 notification-worker 때문이다. 걔도 레디스를 써서
+     * 이 빈이 같이 만들어지는데 제안을 보낼 일은 없다.
      */
-    private void requirePublisherConfirms() {
-        // CORRELATED 여야 한다. SIMPLE 은 CorrelationData 의 future 를 안 채워준다 —
-        // 채널 단위로 기다리는 방식이라 "이 메시지" 를 지목할 수가 없어서다.
-        boolean correlated =
-                rabbitTemplate.getConnectionFactory() instanceof CachingConnectionFactory caching
-                        && caching.isPublisherConfirms();
-        if (correlated) {
-            return;
+    private OfferChannel channel() {
+        OfferChannel channel = channelProvider.getIfAvailable();
+        if (channel == null) {
+            throw new IllegalStateException("OfferChannel 이 없다. 래빗엠큐나 카프카 중 하나는 있어야 제안을 보낸다");
         }
-        throw new IllegalStateException(
-                "publisher confirm 이 꺼져 있어서 제안을 보낼 수 없다. "
-                        + "이 서비스의 application.yml 에 spring.rabbitmq.publisher-confirm-type=correlated 를 넣어야 한다. "
-                        + "안 넣으면 확인 응답을 영영 못 받아서 제안마다 " + CONFIRM_TIMEOUT.toSeconds() + "초씩 버리고 실패한다.");
-    }
-
-    private boolean confirmed(CorrelationData confirm, long orderId, long riderId) {
-        try {
-            CorrelationData.Confirm result =
-                    confirm.getFuture().get(CONFIRM_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
-            if (result != null && result.isAck()) {
-                return true;
-            }
-            log.error("제안 발행을 브로커가 거절했다: orderId={} riderId={} 이유={}",
-                    orderId, riderId, result == null ? "응답 없음" : result.getReason());
-            return false;
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return false;
-        } catch (Exception e) {
-            log.error("제안 발행 확인 실패: orderId={} riderId={}", orderId, riderId, e);
-            return false;
-        }
+        return channel;
     }
 }

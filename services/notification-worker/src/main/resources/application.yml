@@ -8,6 +8,21 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6380}
+  # 2단계 실험: delivery.offer.transport=kafka 일 때만 컨슈머가 뜬다
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9094}
+    consumer:
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      # 한 건에 120ms 라 500건을 쥐면 60초다. 래빗엠큐 prefetch 20 과 비슷하게 맞춘다
+      max-poll-records: 20
+    listener:
+      ack-mode: manual
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
   rabbitmq:
     host: ${RABBIT_HOST:localhost}
     port: ${RABBIT_PORT:5672}
@@ -28,7 +43,12 @@ spring:
         observation-enabled: true
 
 delivery:
+  offer:
+    # rabbit | kafka. 2단계 실험 스위치
+    transport: ${OFFER_TRANSPORT:rabbit}
   push:
+    # 2단계 실험, 카프카일 때 제안 알림을 넣을 토픽. notify.push 면 마케팅과 섞이고 notify.push.offer 면 따로 선다
+    kafka-offer-topic: ${PUSH_KAFKA_OFFER_TOPIC:notify.push}
     # 외부 푸시 게이트웨이가 허용하는 초당 요청 수. 인스턴스 수와 무관하게 전체 합이 이걸 넘으면 안 된다.
     global-rate-per-sec: 200
     # 가짜 외부 API 지연(ms). 이걸 올리면 워커를 늘려도 안 되는 상황이 재현된다.

@@ -23,7 +23,9 @@ public class PushListener {
 
     private final PushDelivery pushDelivery;
 
-    @RabbitListener(queues = RabbitTopology.Q_PUSH)
+    @RabbitListener(queues = RabbitTopology.Q_PUSH,
+            // 2단계 실험: transport=kafka 면 kafka 패키지의 리스너가 대신 받는다
+            autoStartup = "#{'${delivery.offer.transport:rabbit}' == 'rabbit'}")
     public void onPush(PushMessage message, Channel channel,
                        @Header(AmqpHeaders.DELIVERY_TAG) long deliveryTag) throws IOException {
         PushDelivery.Outcome outcome;

@@ -1,0 +1,8 @@
+push_expired_total{application="notification-worker"} 0.0
+push_offer_age_seconds_count{application="notification-worker"} 2
+push_offer_age_seconds_sum{application="notification-worker"} 0.439665
+push_offer_age_seconds_max{application="notification-worker"} 0.285839
+push_ratelimited_total{application="notification-worker",kind="marketing"} 0.0
+push_ratelimited_total{application="notification-worker",kind="offer"} 0.0
+push_sent_total{application="notification-worker",kind="marketing"} 6463.0
+push_sent_total{application="notification-worker",kind="offer"} 2.0

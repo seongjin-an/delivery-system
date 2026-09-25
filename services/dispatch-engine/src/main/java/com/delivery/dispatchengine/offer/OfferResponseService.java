@@ -1,9 +1,9 @@
 package com.delivery.dispatchengine.offer;
 
-import com.delivery.common.RabbitTopology;
 import com.delivery.common.Times;
 import com.delivery.common.dispatch.DispatchEventPublisher;
 import com.delivery.common.dispatch.OfferBoard;
+import com.delivery.common.dispatch.OfferChannel;
 import com.delivery.common.dispatch.OfferDecision;
 import com.delivery.common.dispatch.OfferSnapshot;
 import com.delivery.common.dispatch.OfferState;
@@ -15,7 +15,6 @@ import com.delivery.common.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
 
 /**
@@ -37,7 +36,7 @@ public class OfferResponseService {
     private final RiderState riderState;
     private final RiderLock riderLock;
     private final DispatchEventPublisher eventPublisher;
-    private final RabbitTemplate rabbitTemplate;
+    private final OfferChannel offerChannel;
 
     /**
      * DE-04 수락. 여기를 통과하면 배차가 확정된다.
@@ -129,8 +128,7 @@ public class OfferResponseService {
         DispatchOffer expired = new DispatchOffer(
                 offerId, settled.orderId(), riderId, settled.attempt(), Times.now());
         try {
-            rabbitTemplate.convertAndSend(
-                    RabbitTopology.DISPATCH_DLX, RabbitTopology.RK_OFFER_EXPIRED, expired);
+            offerChannel.expireNow(expired);
         } catch (Exception e) {
             log.warn("거절 뒤 재제안 요청을 못 넣었다. 10초 뒤 원래 타이머가 이어받는다: "
                     + "orderId={} offerId={}", settled.orderId(), offerId, e);

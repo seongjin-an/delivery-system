@@ -1,0 +1,4 @@
+start 18:39:21 transport=kafka kill=true before=891257224007622873
+kill -9 offer-relay 18:39:46
+offer-relay up 18:40:17
+end 18:41:42

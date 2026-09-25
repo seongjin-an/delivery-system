@@ -6,6 +6,9 @@ import com.delivery.common.dispatch.DispatchLease;
 import com.delivery.common.dispatch.OfferBoard;
 import com.delivery.common.dispatch.OfferProperties;
 import com.delivery.common.dispatch.OfferSender;
+import com.delivery.common.dispatch.KafkaOfferChannel;
+import com.delivery.common.dispatch.RabbitOfferChannel;
+import com.delivery.common.dispatch.OfferChannel;
 import com.delivery.common.dispatch.RiderLock;
 import com.delivery.common.dispatch.RiderState;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -14,6 +17,8 @@ import org.springframework.boot.autoconfigure.amqp.RabbitAutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration;
 import org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -133,20 +138,28 @@ public class CommonDispatchAutoConfiguration {
         RiderState riderState(StringRedisTemplate redis) {
             return new RiderState(redis, RELEASE_RIDER, FINISH_DELIVERY);
         }
+
+        /** 어느 브로커로 보낼지(OfferChannel)는 쓸 때 꺼낸다. OfferSender#channel 주석 참고 */
+        @Bean
+        @ConditionalOnBean(StringRedisTemplate.class)
+        @ConditionalOnMissingBean
+        OfferSender offerSender(ObjectProvider<OfferChannel> channel, OfferBoard offerBoard,
+                                CandidateList candidateList, RiderLock riderLock, RiderState riderState) {
+            return new OfferSender(channel, offerBoard, candidateList, riderLock, riderState);
+        }
     }
 
-    /** 제안을 실제로 던지려면 래빗엠큐까지 있어야 한다 */
+    /** 2단계 실험: delivery.offer.transport=rabbit(기본) 이면 제안이 래빗엠큐로 나간다 */
     @Configuration(proxyBeanMethods = false)
-    @ConditionalOnClass({StringRedisTemplate.class, RabbitTemplate.class})
+    @ConditionalOnClass(RabbitTemplate.class)
     static class RabbitParts {
 
         @Bean
-        @ConditionalOnBean({StringRedisTemplate.class, RabbitTemplate.class})
-        @ConditionalOnMissingBean
-        OfferSender offerSender(RabbitTemplate rabbitTemplate, OfferBoard offerBoard,
-                                CandidateList candidateList, RiderLock riderLock,
-                                RiderState riderState) {
-            return new OfferSender(rabbitTemplate, offerBoard, candidateList, riderLock, riderState);
+        @ConditionalOnBean(RabbitTemplate.class)
+        @ConditionalOnMissingBean(OfferChannel.class)
+        @ConditionalOnProperty(name = "delivery.offer.transport", havingValue = "rabbit", matchIfMissing = true)
+        OfferChannel rabbitOfferChannel(RabbitTemplate rabbitTemplate) {
+            return new RabbitOfferChannel(rabbitTemplate);
         }
     }
 
@@ -160,6 +173,14 @@ public class CommonDispatchAutoConfiguration {
         @ConditionalOnMissingBean
         DispatchEventPublisher dispatchEventPublisher(KafkaTemplate<String, String> template) {
             return new DispatchEventPublisher(template);
+        }
+
+        @Bean
+        @ConditionalOnBean(KafkaTemplate.class)
+        @ConditionalOnMissingBean(OfferChannel.class)
+        @ConditionalOnProperty(name = "delivery.offer.transport", havingValue = "kafka")
+        OfferChannel kafkaOfferChannel(KafkaTemplate<String, String> template) {
+            return new KafkaOfferChannel(template);
         }
     }
 }

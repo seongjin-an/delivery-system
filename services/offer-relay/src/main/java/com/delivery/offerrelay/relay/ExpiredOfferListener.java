@@ -35,7 +35,9 @@ public class ExpiredOfferListener {
 
     private final OfferRelayService relayService;
 
-    @RabbitListener(queues = RabbitTopology.Q_OFFER_EXPIRED)
+    // 2단계 실험: transport=kafka 면 KafkaExpiredOfferListener 가 대신 받는다
+    @RabbitListener(queues = RabbitTopology.Q_OFFER_EXPIRED,
+            autoStartup = "#{'${delivery.offer.transport:rabbit}' == 'rabbit'}")
     public void onExpired(DispatchOffer offer) {
         relayService.relay(offer);
     }

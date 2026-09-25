@@ -60,7 +60,8 @@ class OfferRelayServiceTest {
     @BeforeEach
     void setUp() {
         relayService = new OfferRelayService(dispatchLease, offerBoard, offerSender,
-                riderState, eventPublisher, new RelayProperties(MAX_ATTEMPTS));
+                riderState, eventPublisher, new RelayProperties(MAX_ATTEMPTS),
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
         ReflectionTestUtils.setField(relayService, "instanceId", "offer-relay:8094");
 
         given(dispatchLease.acquire(anyLong(), anyString())).willAnswer(c -> c.getArgument(1));

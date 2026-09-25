@@ -38,6 +38,9 @@ spring:
       observation-enabled: true      # AMQP 헤더로도 traceparent 를 넘긴다
 
 delivery:
+  offer:
+    # rabbit | kafka. 2단계 실험 스위치 — 제안을 어느 브로커로 보낼지
+    transport: ${OFFER_TRANSPORT:rabbit}
   listener:
     order-created:
       topic: order.created

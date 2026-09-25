@@ -10,11 +10,14 @@ import com.delivery.common.dispatch.OfferState;
 import com.delivery.common.dispatch.RiderState;
 import com.delivery.common.event.DispatchOffer;
 import com.delivery.offerrelay.config.RelayProperties;
-import lombok.RequiredArgsConstructor;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+
+import java.time.Duration;
 
 /**
  * RE-02 만료 제안 처리. 기능 정의서의 8단계를 그대로 밟는다.
@@ -33,7 +36,6 @@ import org.springframework.stereotype.Service;
  * 펜싱은 시간을 거슬러 도착한 메시지를 막는다. 하나라도 빼면 그 자리로 사고가 들어온다.
  */
 @Service
-@RequiredArgsConstructor
 public class OfferRelayService {
 
     private static final Logger log = LoggerFactory.getLogger(OfferRelayService.class);
@@ -45,12 +47,40 @@ public class OfferRelayService {
     private final DispatchEventPublisher eventPublisher;
     private final RelayProperties properties;
 
+    /*
+     * 2단계 실험: 제안이 나가고(offeredAt) 여기 도착하기까지. 거절 없이 전부 무응답이면
+     * 이게 곧 "10초 타이머가 실제로 몇 초에 울렸나" 다. 래빗엠큐와 카프카를 같은 자리에서 잰다.
+     */
+    private final Timer relayDelay;
+
+    public OfferRelayService(DispatchLease dispatchLease, OfferBoard offerBoard, OfferSender offerSender,
+                             RiderState riderState, DispatchEventPublisher eventPublisher,
+                             RelayProperties properties, MeterRegistry registry) {
+        this.dispatchLease = dispatchLease;
+        this.offerBoard = offerBoard;
+        this.offerSender = offerSender;
+        this.riderState = riderState;
+        this.eventPublisher = eventPublisher;
+        this.properties = properties;
+        this.relayDelay = Timer.builder("offer_relay_delay")
+                .description("offeredAt 부터 만료 메시지가 relay 에 닿기까지")
+                // 판 전후로 구간별 누적 개수를 긁어서 빼면 재시작 없이 그 판만의 분포가 나온다.
+                // 재시작해서 지표를 비웠더니 JVM 이 식은 채로 시작해 첫 30초 동안 초당 1~9건밖에 못 처리했다.
+                .serviceLevelObjectives(
+                        Duration.ofMillis(9_500), Duration.ofMillis(10_000), Duration.ofMillis(10_100),
+                        Duration.ofMillis(10_250), Duration.ofMillis(10_500), Duration.ofSeconds(11),
+                        Duration.ofSeconds(12), Duration.ofSeconds(15), Duration.ofSeconds(20),
+                        Duration.ofSeconds(30), Duration.ofSeconds(60), Duration.ofSeconds(120))
+                .register(registry);
+    }
+
     @Value("${spring.application.name}:${server.port}")
     private String instanceId;
 
     public void relay(DispatchOffer expired) {
         long orderId = expired.orderId();
         long now = Times.now().toEpochMilli();
+        relayDelay.record(Duration.ofMillis(now - expired.offeredAt().toEpochMilli()));
         String owner = instanceId + ":" + now;
 
         if (dispatchLease.acquire(orderId, owner) == null) {

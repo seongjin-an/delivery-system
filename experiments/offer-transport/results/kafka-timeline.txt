@@ -1,0 +1,2 @@
+start 18:37:00 transport=kafka kill=false before=891256674994204278
+end 18:39:11

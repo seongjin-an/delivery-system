@@ -1,0 +1,16 @@
+offer_relay_delay_seconds_bucket{application="offer-relay",le="9.5"} 0
+offer_relay_delay_seconds_bucket{application="offer-relay",le="10.0"} 0
+offer_relay_delay_seconds_bucket{application="offer-relay",le="10.1"} 4177
+offer_relay_delay_seconds_bucket{application="offer-relay",le="10.25"} 4622
+offer_relay_delay_seconds_bucket{application="offer-relay",le="10.5"} 4766
+offer_relay_delay_seconds_bucket{application="offer-relay",le="11.0"} 4931
+offer_relay_delay_seconds_bucket{application="offer-relay",le="12.0"} 5341
+offer_relay_delay_seconds_bucket{application="offer-relay",le="15.0"} 5541
+offer_relay_delay_seconds_bucket{application="offer-relay",le="20.0"} 5541
+offer_relay_delay_seconds_bucket{application="offer-relay",le="30.0"} 5541
+offer_relay_delay_seconds_bucket{application="offer-relay",le="60.0"} 5541
+offer_relay_delay_seconds_bucket{application="offer-relay",le="120.0"} 5541
+offer_relay_delay_seconds_bucket{application="offer-relay",le="+Inf"} 5541
+offer_relay_delay_seconds_count{application="offer-relay"} 5541
+offer_relay_delay_seconds_sum{application="offer-relay"} 56794.219
+offer_timer_forwarded_total{application="offer-relay"} 0.0

@@ -65,6 +65,18 @@ create dispatch.failed.DLT     3 1
 # (브로커가 토픽 자동 생성을 꺼놨다).
 create order.status.DLT        3 1
 
+# ── 2단계 실험: 배차 제안을 카프카로 (exp/offer-kafka 브랜치에만 있다) ──────────────
+# 제안은 10분만 살아 있으면 된다(보드 TTL 과 같다).
+create dispatch.offer            6 1 retention.ms=600000
+create dispatch.offer.expired    6 1 retention.ms=600000
+create dispatch.offer.expired.DLT 3 1
+# 래빗엠큐 쪽 max-concurrency 16 에 맞췄다. 카프카는 파티션 하나를 스레드 하나만 읽는다.
+create notify.push               16 1 retention.ms=3600000
+create notify.push.offer         16 1 retention.ms=600000
+create dispatch.offer.DLT        3 1
+create notify.push.DLT           3 1
+create notify.push.offer.DLT     3 1
+
 echo "[create-topics] 완료. 현재 토픽:"
 docker exec "$CONTAINER" $KT --bootstrap-server "$BOOTSTRAP" --list 2>/dev/null \
   | grep -Ev '^__' | sed 's/^/  /'

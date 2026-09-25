@@ -1,0 +1,11 @@
+마케팅 1만 건 넣는 데 0.82초, 주문 891261292658663432
+주문 뒤 5.3초에 ASSIGNED 1
+push_expired_total{application="notification-worker"}                  0
+push_offer_age_seconds_count{application="notification-worker"}        1
+push_offer_age_seconds_sum{application="notification-worker"}          2.55232
+push_offer_age_seconds_max{application="notification-worker"}          3.053452
+push_ratelimited_total{application="notification-worker",kind="marketing"} 0
+push_ratelimited_total{application="notification-worker",kind="offer"} 0
+push_sent_total{application="notification-worker",kind="marketing"}    699
+push_sent_total{application="notification-worker",kind="offer"}        1
+sim: {'accepted': 1, 'unknownRider': 0, 'failures': {}}
