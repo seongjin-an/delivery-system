@@ -5,7 +5,9 @@ import com.delivery.common.KafkaTopics;
 import com.delivery.common.event.RiderLocation;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import com.delivery.locationingest.ingest.LocationSink;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 
@@ -18,7 +20,8 @@ import org.springframework.stereotype.Component;
  */
 @Slf4j
 @Component
-public class LocationPublisher {
+@ConditionalOnProperty(name = "delivery.ingest.transport", havingValue = "kafka", matchIfMissing = true)
+public class LocationPublisher implements LocationSink {
 
     private final KafkaTemplate<String, String> kafkaTemplate;
     private final Counter failed;
@@ -30,6 +33,7 @@ public class LocationPublisher {
                 .register(meterRegistry);
     }
 
+    @Override
     public void publish(RiderLocation location, Runnable onFailure) {
         // 키가 riderId 라야 같은 라이더 좌표가 한 파티션에 순서대로 쌓인다.
         // 안 그러면 geo-indexer 에서 오래된 좌표가 나중에 도착해서 라이더가 뒤로 순간이동한다.

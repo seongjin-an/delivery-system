@@ -26,9 +26,26 @@ spring:
         delivery.timeout.ms: 3000
     template:
       observation-enabled: true
+  # 2단계 실험용. transport=kafka 일 땐 연결을 안 연다(RabbitTemplate 을 아무도 안 부르니까).
+  rabbitmq:
+    host: ${RABBIT_HOST:localhost}
+    port: ${RABBIT_PORT:5672}
+    username: ${RABBIT_USERNAME:dev_user}
+    password: ${RABBIT_PASSWORD:dev_password}
+    cache:
+      channel:
+        # 기본 25 다. 톰캣 스레드 200개가 동시에 보내면 25개 넘는 몫은 채널을 새로 열고 닫는다.
+        # 채널 여닫기가 왕복 두 번이라 그게 좌표 한 건마다 붙는다. 톰캣 스레드 수에 맞춘다.
+        size: 200
 
 delivery:
+  location-queue:
+    # 둘 다 0 이면 인자 없는 큐다. geo-indexer 와 같은 값이어야 한다 (LocationQueueConfig 주석)
+    ttl-ms: ${LOCATION_QUEUE_TTL_MS:0}
+    max-length: ${LOCATION_QUEUE_MAX_LENGTH:0}
   ingest:
+    # kafka | rabbit. 2단계 실험 스위치
+    transport: ${INGEST_TRANSPORT:kafka}
     # 토픽 이름은 여기 안 둔다. KafkaTopics.RIDER_LOCATION 한 군데서만 정한다.
     # 좌표 이동거리가 이보다 작으면 발행을 건너뛴다(정차 중인 라이더가 트래픽을 다 먹는 걸 막음)
     min-move-meters: 15

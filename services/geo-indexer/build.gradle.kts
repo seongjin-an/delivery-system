@@ -11,6 +11,8 @@ dependencies {
     // 스타터에 안 딸려와서, 풀만 켜두면 기동 때 GenericObjectPoolConfig NoClassDefFoundError 로 죽는다.
     implementation("org.apache.commons:commons-pool2")
     implementation("org.springframework.kafka:spring-kafka")
+    // 2단계 실험: 위치 스트림을 래빗엠큐로 보내본다 (delivery.ingest.transport=rabbit)
+    implementation("org.springframework.boot:spring-boot-starter-amqp")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("io.micrometer:micrometer-registry-prometheus")
 

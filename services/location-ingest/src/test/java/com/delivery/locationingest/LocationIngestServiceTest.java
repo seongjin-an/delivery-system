@@ -6,7 +6,7 @@ import com.delivery.common.exception.ErrorCode;
 import com.delivery.locationingest.config.IngestProperties;
 import com.delivery.locationingest.ingest.LocationIngestService;
 import com.delivery.locationingest.ingest.MoveFilter;
-import com.delivery.locationingest.kafka.LocationPublisher;
+import com.delivery.locationingest.ingest.LocationSink;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -29,7 +29,7 @@ class LocationIngestServiceTest {
     private static final double LNG = 127.027610;
 
     private final MoveFilterTest.MutableClock clock = new MoveFilterTest.MutableClock();
-    private final LocationPublisher publisher = mock(LocationPublisher.class);
+    private final LocationSink publisher = mock(LocationSink.class);
     private final SimpleMeterRegistry registry = new SimpleMeterRegistry();
     private final LocationIngestService service = new LocationIngestService(
             new MoveFilter(new IngestProperties(15, Duration.ofSeconds(10), 1000, Duration.ofMinutes(30)), clock),

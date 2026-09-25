@@ -10,6 +10,10 @@ package com.delivery.common;
  */
 public final class RabbitTopology {
 
+    // ── 2단계 실험: 위치 스트림을 래빗엠큐로 ────────────────────────────────────
+    /** 기본 익스체인지로 바로 넣는다. location-ingest 와 geo-indexer 가 같은 인자로 선언해야 한다 */
+    public static final String Q_RIDER_LOCATION = "rider.location";
+
     // ── 배차 제안 ────────────────────────────────────────────────────────────
     /** 배차 제안 발행용 토픽 익스체인지 */
     public static final String DISPATCH_EXCHANGE = "dispatch.x";

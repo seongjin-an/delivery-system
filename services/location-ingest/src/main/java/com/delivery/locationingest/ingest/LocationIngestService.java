@@ -3,7 +3,6 @@ package com.delivery.locationingest.ingest;
 import com.delivery.common.event.RiderLocation;
 import com.delivery.common.geo.Coordinates;
 import com.delivery.common.geo.Zones;
-import com.delivery.locationingest.kafka.LocationPublisher;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.stereotype.Service;
@@ -21,13 +20,13 @@ import java.util.Map;
 public class LocationIngestService {
 
     private final MoveFilter moveFilter;
-    private final LocationPublisher publisher;
+    private final LocationSink publisher;
     private final Clock clock;
 
     private final Map<MoveFilter.Verdict, Counter> verdicts = new EnumMap<>(MoveFilter.Verdict.class);
     private final Counter futureSentAt;
 
-    public LocationIngestService(MoveFilter moveFilter, LocationPublisher publisher, Clock clock,
+    public LocationIngestService(MoveFilter moveFilter, LocationSink publisher, Clock clock,
                                  MeterRegistry meterRegistry) {
         this.moveFilter = moveFilter;
         this.publisher = publisher;

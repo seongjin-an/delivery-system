@@ -1,0 +1,5 @@
+A start 17:23:29
+geo-indexer down
+B start 17:24:30 (geo-indexer 끔)
+C start 17:29:31 (geo-indexer 켬)
+C end 17:31:31

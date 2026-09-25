@@ -12,6 +12,12 @@ spring:
         pool:
           enabled: true
           max-active: 32
+  # 2단계 실험용. transport=kafka 면 리스너가 없어서 연결을 안 연다.
+  rabbitmq:
+    host: ${RABBIT_HOST:localhost}
+    port: ${RABBIT_PORT:5672}
+    username: ${RABBIT_USERNAME:dev_user}
+    password: ${RABBIT_PASSWORD:dev_password}
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9094}
     consumer:
@@ -26,9 +32,15 @@ spring:
       observation-enabled: true      # 컨슈머 스팬을 프로듀서 트레이스에 이어붙인다
 
 delivery:
+  location-queue:
+    # location-ingest 와 같은 값이어야 한다
+    ttl-ms: ${LOCATION_QUEUE_TTL_MS:0}
+    max-length: ${LOCATION_QUEUE_MAX_LENGTH:0}
   listener:
     rider-location:
       topic: rider.location
+      # kafka | rabbit. 2단계 실험 스위치 (location-ingest 의 delivery.ingest.transport 와 맞춘다)
+      transport: ${INGEST_TRANSPORT:kafka}
       # 시나리오 B 의 손잡이: concurrency 를 파티션 수(6) 위로 올려도 처리량이 안 늘어난다.
       #   인스턴스 수 × concurrency 가 파티션 수를 넘는 순간부터 남는 스레드는 그냥 놀고 있다.
       concurrency: 3

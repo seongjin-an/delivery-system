@@ -7,14 +7,18 @@ import com.delivery.geoindexer.index.IndexResult;
 import com.delivery.geoindexer.index.RiderIndexer;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * {@code rider.location} 을 배치로 받아 레디스 인덱스에 반영한다. GI-01 의 입구.
@@ -48,6 +52,19 @@ public class RiderLocationListener {
     private final Counter droppedOutOfRange;
     private final Counter droppedRedisError;
 
+    /*
+     * 2단계 실험용 지표 두 개. 카프카와 래빗엠큐를 같은 잣대로 재려고 둘 다 여기(공통 입구)에 뒀다.
+     *
+     * orderRegression: 이미 더 새 좌표를 처리한 라이더의 옛 좌표가 뒤늦게 들어온 횟수.
+     *   RiderIndexer 는 sentAt 을 안 보고 "나중에 온 게 최신" 으로 치니까, 이게 곧 레디스에서
+     *   라이더가 뒤로 순간이동한 횟수다. 카프카는 파티션 키가 riderId 라 0 이어야 한다.
+     * staleness: 좌표가 앱에서 나와(sentAt) 여기 도착할 때까지 걸린 시간. 밀렸다 따라잡을 때
+     *   몇 초 묵은 좌표를 레디스에 쓰고 있었는지 본다.
+     */
+    private final ConcurrentHashMap<Long, Instant> lastSentAt = new ConcurrentHashMap<>();
+    private final Counter orderRegression;
+    private final Timer staleness;
+
     public RiderLocationListener(RiderIndexer riderIndexer, MeterRegistry meterRegistry) {
         this.riderIndexer = riderIndexer;
         this.records = Counter.builder("geo_index_records_total")
@@ -57,6 +74,12 @@ public class RiderLocationListener {
         this.droppedMalformed = dropped(meterRegistry, "malformed");
         this.droppedOutOfRange = dropped(meterRegistry, "out_of_range");
         this.droppedRedisError = dropped(meterRegistry, "redis_error");
+        this.orderRegression = Counter.builder("geo_index_order_regression_total")
+                .description("같은 라이더의 더 새 좌표보다 늦게 도착한 옛 좌표 수").register(meterRegistry);
+        this.staleness = Timer.builder("geo_index_staleness")
+                .description("sentAt 부터 geo-indexer 도착까지")
+                .publishPercentiles(0.5, 0.99)
+                .register(meterRegistry);
     }
 
     private static Counter dropped(MeterRegistry registry, String reason) {
@@ -69,11 +92,21 @@ public class RiderLocationListener {
     @KafkaListener(
             topics = "${delivery.listener.rider-location.topic}",
             concurrency = "${delivery.listener.rider-location.concurrency}",
+            // 2단계 실험: transport=rabbit 이면 카프카 컨슈머를 안 띄운다
+            autoStartup = "#{'${delivery.listener.rider-location.transport:kafka}' == 'kafka'}",
             batch = "true")
     public void onLocations(List<String> payloads, Acknowledgment ack) {
+        handle(payloads);
+        // 성공이든 실패든 ack 한다. 위 클래스 주석의 이유 그대로다.
+        ack.acknowledge();
+    }
+
+    /** 카프카와 래빗엠큐 리스너가 같이 쓰는 본문. 예외를 밖으로 안 던진다 */
+    public void handle(List<String> payloads) {
         records.increment(payloads.size());
 
         List<RiderLocation> locations = parse(payloads);
+        measure(locations);
         try {
             IndexResult result = riderIndexer.index(locations);
             riders.increment(result.indexed());
@@ -85,9 +118,24 @@ public class RiderLocationListener {
             log.error("배치 {}건을 인덱싱하지 못했다. 재시도하지 않고 버린다 — "
                     + "3초 뒤 다음 좌표가 온다", locations.size(), e);
         }
+    }
 
-        // 성공이든 실패든 ack 한다. 위 클래스 주석의 이유 그대로다.
-        ack.acknowledge();
+    private void measure(List<RiderLocation> locations) {
+        Instant now = Instant.now();
+        for (RiderLocation location : locations) {
+            if (location.sentAt() == null) {
+                continue;
+            }
+            staleness.record(Duration.between(location.sentAt(), now));
+            // compute 로 해야 한다. 래빗엠큐는 컨슈머 스레드 셋이 같은 라이더를 동시에 만질 수 있다.
+            lastSentAt.compute(location.riderId(), (id, prev) -> {
+                if (prev != null && location.sentAt().isBefore(prev)) {
+                    orderRegression.increment();
+                    return prev;
+                }
+                return location.sentAt();
+            });
+        }
     }
 
     /**
