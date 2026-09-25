@@ -18,7 +18,9 @@ spring:
       group-id: geo-indexer
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      auto-offset-reset: latest      # 위치는 과거 값이 쓸모없다. 밀렸으면 버리고 현재부터.
+      # 처음 뜨는 그룹이면 과거는 안 읽는다. 커밋된 오프셋이 있으면 이건 안 먹고 그 자리부터 다 읽는다.
+      # 밀린 좌표를 버리는 건 아래 rider-location.max-age 가 한다.
+      auto-offset-reset: latest
       enable-auto-commit: false
       max-poll-records: 500
     listener:
@@ -32,6 +34,10 @@ delivery:
       # 시나리오 B 의 손잡이: concurrency 를 파티션 수(6) 위로 올려도 처리량이 안 늘어난다.
       #   인스턴스 수 × concurrency 가 파티션 수를 넘는 순간부터 남는 스레드는 그냥 놀고 있다.
       concurrency: 3
+      # 레코드 타임스탬프가 이보다 오래된 좌표는 버린다(RiderLocationListener#fresh).
+      # 라이더 앱이 3초마다 보내니 10초 묵은 좌표 뒤엔 새 좌표가 세 개쯤 와 있다. 평소엔 도착까지 p99 0.23초라
+      # 멀쩡한 걸 버릴 일은 없다. 시나리오 B 처럼 랙이 쌓이는 걸 그대로 봐야 할 땐 0 으로 끈다.
+      max-age: ${LOCATION_MAX_AGE:10s}
   sweep:
     # GI-02 오프라인 정리. 끄면 스케줄러 자체가 안 뜬다 (시나리오 B 에서 컨슈머만 잴 때)
     enabled: ${SWEEP_ENABLED:true}

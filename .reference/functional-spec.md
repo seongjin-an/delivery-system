@@ -430,7 +430,11 @@ order-api 를 두 대 띄우고 주문을 100건 넣었을 때, `order.created` 
 5. `ZADD riders:heartbeat {lastSeenAt} {riderId}` 로 오프라인 정리용 인덱스를 같이 유지한다.
    GEO 자료구조만으로는 "좌표가 오래된 사람" 을 찾을 수 없기 때문이다.
 6. 처리한 뒤 수동으로 ack 한다.
-7. `auto-offset-reset` 은 `latest` 다. 밀린 좌표는 따라잡지 않고 버린다.
+7. `auto-offset-reset` 은 `latest` 다. 다만 이건 커밋된 오프셋이 없는 첫 기동에만 먹는다.
+8. **레코드 타임스탬프가 10초 넘게 지난 좌표는 버린다** (`delivery.listener.rider-location.max-age`).
+   7번만 믿으면 재시작했을 때 커밋한 자리부터 밀린 좌표를 전부 다시 쓴다. 2단계 실험에서 5분 끄고 켜니
+   310초 묵은 좌표가 레디스에 들어갔다. 좌표 안의 `sentAt`(폰 시계)이 아니라 레코드 타임스탬프
+   (location-ingest 서버 시계)로 판단한다. 폰 시계가 늦은 라이더가 통째로 버려지면 안 되기 때문이다.
 
 > `riders:heartbeat` 는 `libs/common` 의 `RedisKeys` 에 추가해야 하는 새 키다.
 
