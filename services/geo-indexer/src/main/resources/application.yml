@@ -4,6 +4,12 @@ server:
 spring:
   application:
     name: geo-indexer
+  # 2단계 실험: GEO_STORE=mysql 일 때만 쓴다. 풀은 기본 10 이다.
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:33306/delivery?serverTimezone=UTC&characterEncoding=UTF-8&rewriteBatchedStatements=true}
+    username: ${DB_USERNAME:dev_user}
+    password: ${DB_PASSWORD:dev_password}
+    driver-class-name: com.mysql.cj.jdbc.Driver
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -28,6 +34,9 @@ spring:
       observation-enabled: true      # 컨슈머 스팬을 프로듀서 트레이스에 이어붙인다
 
 delivery:
+  geo:
+    # redis | mysql. 2단계 실험 스위치 — mysql 이면 레디스에 쓴 뒤 MySQL rider_position 에도 쓴다
+    store: ${GEO_STORE:redis}
   listener:
     rider-location:
       topic: rider.location

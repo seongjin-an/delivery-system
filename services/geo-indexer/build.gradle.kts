@@ -11,6 +11,9 @@ dependencies {
     // 스타터에 안 딸려와서, 풀만 켜두면 기동 때 GenericObjectPoolConfig NoClassDefFoundError 로 죽는다.
     implementation("org.apache.commons:commons-pool2")
     implementation("org.springframework.kafka:spring-kafka")
+    // 2단계 실험: 좌표를 MySQL 공간 인덱스에도 써본다 (GEO_STORE=mysql)
+    implementation("org.springframework.boot:spring-boot-starter-jdbc")
+    runtimeOnly("com.mysql:mysql-connector-j")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("io.micrometer:micrometer-registry-prometheus")
 

@@ -4,7 +4,10 @@ import com.delivery.common.RedisKeys;
 import com.delivery.common.rider.RiderStateFields;
 import com.delivery.common.rider.RiderStatus;
 import com.delivery.dispatchengine.config.DispatchProperties;
-import lombok.RequiredArgsConstructor;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.geo.Distance;
@@ -39,22 +42,39 @@ import java.util.List;
  * 배달 중이라 30명 중 12명만 남기도 한다.
  */
 @Component
-@RequiredArgsConstructor
 public class CandidateFinder {
 
     private static final Logger log = LoggerFactory.getLogger(CandidateFinder.class);
 
     private final StringRedisTemplate redis;
     private final DispatchProperties properties;
+    /** 2단계 실험: geo-store=mysql 일 때만 있다 */
+    private final MysqlNearbySearch mysql;
+    private final Timer searchTimer;
+
+    public CandidateFinder(StringRedisTemplate redis, DispatchProperties properties,
+                           ObjectProvider<MysqlNearbySearch> mysql, MeterRegistry registry,
+                           @Value("${delivery.dispatch.geo-store:redis}") String geoStore) {
+        this.redis = redis;
+        this.properties = properties;
+        this.mysql = mysql.getIfAvailable();
+        // 2단계 실험: 거리만 아는 단계(GEOSEARCH 또는 MySQL 쿼리)에 걸린 시간
+        this.searchTimer = Timer.builder("candidate_nearby_search")
+                .tag("store", geoStore)
+                .publishPercentiles(0.5, 0.95, 0.99)
+                .register(registry);
+    }
 
     public List<Candidate> find(double storeLat, double storeLng, long now) {
-        List<GeoResult<RedisGeoCommands.GeoLocation<String>>> nearby = searchNearby(storeLat, storeLng);
+        List<Nearby> nearby = searchTimer.record(() -> mysql != null
+                ? mysql.search(storeLat, storeLng, properties.searchRadiusMeters(), properties.geoCount(), now)
+                : searchNearby(storeLat, storeLng));
         if (nearby.isEmpty()) {
             return List.of();
         }
 
         List<String> riderIds = nearby.stream()
-                .map(result -> result.getContent().getName())
+                .map(result -> Long.toString(result.riderId()))
                 .toList();
         List<List<String>> states = readStates(riderIds);
 
@@ -78,7 +98,7 @@ public class CandidateFinder {
      * <p>COUNT 와 ASC 를 반드시 같이 준다. 둘 다 줘야 레디스가 가까운 순으로 세다가 30명에서
      * 멈춘다. 안 주면 반경 안에 있는 500명을 전부 계산해서 실어 보낸다.
      */
-    private List<GeoResult<RedisGeoCommands.GeoLocation<String>>> searchNearby(double lat, double lng) {
+    private List<Nearby> searchNearby(double lat, double lng) {
         RedisGeoCommands.GeoSearchCommandArgs args = RedisGeoCommands.GeoSearchCommandArgs
                 .newGeoSearchArgs()
                 .includeDistance()
@@ -92,7 +112,19 @@ public class CandidateFinder {
                 new Distance(properties.searchRadiusMeters(), Metrics.NEUTRAL),
                 args);
 
-        return results == null ? List.of() : results.getContent();
+        if (results == null) {
+            return List.of();
+        }
+        List<Nearby> nearby = new ArrayList<>(results.getContent().size());
+        for (GeoResult<RedisGeoCommands.GeoLocation<String>> result : results.getContent()) {
+            try {
+                nearby.add(new Nearby(Long.parseLong(result.getContent().getName()), result.getDistance().getValue()));
+            } catch (NumberFormatException e) {
+                // GEO 에 라이더 아이디가 아닌 게 들어가 있다. 배차를 멈출 일은 아니고 건너뛴다.
+                log.warn("GEO 에 숫자가 아닌 멤버가 있다: {}", result.getContent().getName());
+            }
+        }
+        return nearby;
     }
 
     /**
@@ -123,24 +155,15 @@ public class CandidateFinder {
         return states;
     }
 
-    private Candidate toCandidate(GeoResult<RedisGeoCommands.GeoLocation<String>> result,
-                                  List<String> state, long now) {
-        String riderIdText = result.getContent().getName();
-        long riderId;
-        try {
-            riderId = Long.parseLong(riderIdText);
-        } catch (NumberFormatException e) {
-            // GEO 에 라이더 아이디가 아닌 게 들어가 있다. 배차를 멈출 일은 아니고 건너뛴다.
-            log.warn("GEO 에 숫자가 아닌 멤버가 있다: {}", riderIdText);
-            return null;
-        }
+    private Candidate toCandidate(Nearby result, List<String> state, long now) {
+        long riderId = result.riderId();
 
         String status = state.isEmpty() ? null : state.get(0);
         if (!RiderStatus.parseOrOffline(status).isAvailable()) {
             return null;
         }
 
-        double distanceKm = result.getDistance().getValue() / 1000.0;
+        double distanceKm = result.distanceMeters() / 1000.0;
         long waitMinutes = waitMinutes(state.size() > 1 ? state.get(1) : null, now);
 
         // 점수는 낮을수록 우선. 오래 기다린 사람에게 보너스를 주지 않으면 가게 앞 라이더만

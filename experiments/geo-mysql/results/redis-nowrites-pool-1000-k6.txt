@@ -1,0 +1,33 @@
+time="2026-09-26T09:52:55+09:00" level=warning msg="Insufficient VUs, reached 400 active VUs and cannot initialize more" executor=constant-arrival-rate scenario=probe
+time="2026-09-26T09:53:01+09:00" level=warning msg="The test has generated metrics with 100269 unique time series, which is higher than the suggested limit of 100000 and could cause high memory usage. Consider not using high-cardinality values like unique IDs as metric tags or, if you need them in the URL, use the name metric tag or URL grouping. See https://grafana.com/docs/k6/latest/using-k6/tags-and-groups/ for details." component=metrics-engine-ingester
+time="2026-09-26T09:53:13+09:00" level=warning msg="The test has generated metrics with 200025 unique time series, which is higher than the suggested limit of 100000 and could cause high memory usage. Consider not using high-cardinality values like unique IDs as metric tags or, if you need them in the URL, use the name metric tag or URL grouping. See https://grafana.com/docs/k6/latest/using-k6/tags-and-groups/ for details." component=metrics-engine-ingester
+
+
+  █ TOTAL RESULTS 
+
+    checks_total.......: 55568   1829.895041/s
+    checks_succeeded...: 100.00% 55568 out of 55568
+    checks_failed......: 0.00%   0 out of 55568
+
+    ✓ ok
+    ✓ found
+
+    HTTP
+    http_req_duration..............: avg=260.25ms p(50)=126.69ms p(95)=1.08s p(99)=1.91s max=5.39s
+      { expected_response:true }...: avg=260.25ms p(50)=126.69ms p(95)=1.08s p(99)=1.91s max=5.39s
+    http_req_failed................: 0.00%  0 out of 27784
+    http_reqs......................: 27784  914.94752/s
+
+    EXECUTION
+    dropped_iterations.............: 2216   72.974507/s
+    iteration_duration.............: avg=260.43ms p(50)=126.82ms p(95)=1.08s p(99)=1.91s max=5.39s
+    iterations.....................: 27784  914.94752/s
+    vus............................: 355    min=4          max=399
+    vus_max........................: 400    min=400        max=400
+
+    NETWORK
+    data_received..................: 31 MB  1.0 MB/s
+    data_sent......................: 3.6 MB 118 kB/s
+
+
+

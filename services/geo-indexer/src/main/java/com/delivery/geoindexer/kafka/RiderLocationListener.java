@@ -7,6 +7,9 @@ import com.delivery.geoindexer.index.IndexResult;
 import com.delivery.geoindexer.index.RiderIndexer;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import com.delivery.geoindexer.mysql.MysqlPositionWriter;
+import org.springframework.beans.factory.ObjectProvider;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,6 +57,23 @@ public class RiderLocationListener {
     private final Counter droppedRedisError;
     private final Counter droppedStale;
 
+    /* 2단계 실험: geo.store=mysql 이면 레디스에 쓴 뒤 MySQL 에도 같은 배치를 쓴다. 쓰기 시간을 따로 잰다 */
+    private MysqlPositionWriter mysqlWriter;
+    private Timer redisWrite;
+    private Timer mysqlWrite;
+    private Counter mysqlFailed;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    void experiment(ObjectProvider<MysqlPositionWriter> mysqlWriter, MeterRegistry registry) {
+        this.mysqlWriter = mysqlWriter.getIfAvailable();
+        this.redisWrite = Timer.builder("geo_index_write").tag("store", "redis")
+                .publishPercentiles(0.5, 0.95, 0.99).register(registry);
+        this.mysqlWrite = Timer.builder("geo_index_write").tag("store", "mysql")
+                .publishPercentiles(0.5, 0.95, 0.99).register(registry);
+        this.mysqlFailed = Counter.builder("geo_index_mysql_failed_total")
+                .description("MySQL 에 못 쓴 배치 수").register(registry);
+    }
+
     public RiderLocationListener(RiderIndexer riderIndexer, MeterRegistry meterRegistry,
                                  @Value("${delivery.listener.rider-location.max-age}") Duration maxAge) {
         this.riderIndexer = riderIndexer;
@@ -84,7 +104,10 @@ public class RiderLocationListener {
 
         List<RiderLocation> locations = parse(fresh(batch));
         try {
-            IndexResult result = riderIndexer.index(locations);
+            IndexResult result = redisWrite == null
+                    ? riderIndexer.index(locations)
+                    : redisWrite.record(() -> riderIndexer.index(locations));
+            writeMysql(locations);
             riders.increment(result.indexed());
 
             log.debug("위치 인덱싱: 받음={} 씀={} 중복={} 새로온라인={}",
@@ -97,6 +120,18 @@ public class RiderLocationListener {
 
         // 성공이든 실패든 ack 한다. 위 클래스 주석의 이유 그대로다.
         ack.acknowledge();
+    }
+
+    private void writeMysql(List<RiderLocation> locations) {
+        if (mysqlWriter == null || locations.isEmpty()) {
+            return;
+        }
+        try {
+            mysqlWrite.record(() -> mysqlWriter.write(locations, System.currentTimeMillis()));
+        } catch (Exception e) {
+            mysqlFailed.increment();
+            log.warn("MySQL 좌표 쓰기 실패 {}건: {}", locations.size(), e.toString());
+        }
     }
 
     /**

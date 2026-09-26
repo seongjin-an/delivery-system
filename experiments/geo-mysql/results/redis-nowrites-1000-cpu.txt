@@ -1,0 +1,2 @@
+delivery-mysql 1.07%
+delivery-redis 18.53%

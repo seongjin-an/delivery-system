@@ -1,0 +1,3 @@
+candidate_nearby_search_seconds{application="dispatch-engine",store="mysql",quantile="0.5"} 1.006108672
+candidate_nearby_search_seconds{application="dispatch-engine",store="mysql",quantile="0.95"} 1.542979584
+candidate_nearby_search_seconds{application="dispatch-engine",store="mysql",quantile="0.99"} 2.079850496

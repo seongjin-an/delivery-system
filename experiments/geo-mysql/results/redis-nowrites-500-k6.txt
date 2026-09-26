@@ -1,0 +1,30 @@
+time="2026-09-26T09:50:17+09:00" level=warning msg="The test has generated metrics with 100160 unique time series, which is higher than the suggested limit of 100000 and could cause high memory usage. Consider not using high-cardinality values like unique IDs as metric tags or, if you need them in the URL, use the name metric tag or URL grouping. See https://grafana.com/docs/k6/latest/using-k6/tags-and-groups/ for details." component=metrics-engine-ingester
+
+
+  █ TOTAL RESULTS 
+
+    checks_total.......: 30002   999.968303/s
+    checks_succeeded...: 100.00% 30002 out of 30002
+    checks_failed......: 0.00%   0 out of 30002
+
+    ✓ ok
+    ✓ found
+
+    HTTP
+    http_req_duration..............: avg=7.87ms p(50)=3.37ms p(95)=30.81ms p(99)=71.44ms max=189.09ms
+      { expected_response:true }...: avg=7.87ms p(50)=3.37ms p(95)=30.81ms p(99)=71.44ms max=189.09ms
+    http_req_failed................: 0.00%  0 out of 15001
+    http_reqs......................: 15001  499.984152/s
+
+    EXECUTION
+    iteration_duration.............: avg=8ms    p(50)=3.48ms p(95)=30.96ms p(99)=71.86ms max=189.18ms
+    iterations.....................: 15001  499.984152/s
+    vus............................: 2      min=1          max=38 
+    vus_max........................: 400    min=400        max=400
+
+    NETWORK
+    data_received..................: 17 MB  553 kB/s
+    data_sent......................: 1.9 MB 65 kB/s
+
+
+

@@ -1,0 +1,62 @@
+time="2026-09-26T09:44:14+09:00" level=warning msg="Insufficient VUs, reached 400 active VUs and cannot initialize more" executor=constant-arrival-rate scenario=probe
+time="2026-09-26T09:44:23+09:00" level=warning msg="Request Failed" error="Get \"http://localhost:8093/api/candidates?lat=37.51611750738146&lng=126.94732378208089\": request timeout"
+time="2026-09-26T09:44:23+09:00" level=warning msg="Request Failed" error="Get \"http://localhost:8093/api/candidates?lat=37.4710520762934&lng=126.99207539815369\": request timeout"
+time="2026-09-26T09:44:23+09:00" level=warning msg="Request Failed" error="Get \"http://localhost:8093/api/candidates?lat=37.62262481962204&lng=126.97802287965727\": request timeout"
+time="2026-09-26T09:44:23+09:00" level=warning msg="Request Failed" error="Get \"http://localhost:8093/api/candidates?lat=37.48707804488699&lng=126.97532765569802\": request timeout"
+time="2026-09-26T09:44:24+09:00" level=warning msg="Request Failed" error="Get \"http://localhost:8093/api/candidates?lat=37.508155020097625&lng=127.00175919327856\": request timeout"
+time="2026-09-26T09:44:24+09:00" level=warning msg="Request Failed" error="Get \"http://localhost:8093/api/candidates?lat=37.50278943771149&lng=126.96768290209023\": request timeout"
+time="2026-09-26T09:44:25+09:00" level=warning msg="Request Failed" error="Get \"http://localhost:8093/api/candidates?lat=37.62231318339147&lng=126.9542395045147\": request timeout"
+time="2026-09-26T09:44:26+09:00" level=warning msg="Request Failed" error="Get \"http://localhost:8093/api/candidates?lat=37.60431910913054&lng=127.0244099983851\": request timeout"
+time="2026-09-26T09:44:26+09:00" level=warning msg="Request Failed" error="Get \"http://localhost:8093/api/candidates?lat=37.49799151469497&lng=126.99134700521188\": request timeout"
+time="2026-09-26T09:44:26+09:00" level=warning msg="Request Failed" error="Get \"http://localhost:8093/api/candidates?lat=37.60263652091929&lng=126.98673436186994\": request timeout"
+time="2026-09-26T09:44:31+09:00" level=warning msg="Request Failed" error="Get \"http://localhost:8093/api/candidates?lat=37.54035302863416&lng=127.07425949562024\": request timeout"
+time="2026-09-26T09:44:31+09:00" level=warning msg="Request Failed" error="Get \"http://localhost:8093/api/candidates?lat=37.59930620862557&lng=127.00290791000958\": request timeout"
+time="2026-09-26T09:44:34+09:00" level=warning msg="Request Failed" error="Get \"http://localhost:8093/api/candidates?lat=37.48736617618285&lng=126.95141113306602\": request timeout"
+time="2026-09-26T09:44:35+09:00" level=warning msg="Request Failed" error="Get \"http://localhost:8093/api/candidates?lat=37.50586813170146&lng=126.97707220983378\": request timeout"
+time="2026-09-26T09:44:36+09:00" level=warning msg="Request Failed" error="Get \"http://localhost:8093/api/candidates?lat=37.59974170358745&lng=127.00915616613705\": request timeout"
+time="2026-09-26T09:44:36+09:00" level=warning msg="Request Failed" error="Get \"http://localhost:8093/api/candidates?lat=37.56800170008206&lng=126.94800856837688\": request timeout"
+time="2026-09-26T09:44:37+09:00" level=warning msg="Request Failed" error="Get \"http://localhost:8093/api/candidates?lat=37.473931822309204&lng=127.04055548708891\": request timeout"
+time="2026-09-26T09:44:37+09:00" level=warning msg="Request Failed" error="Get \"http://localhost:8093/api/candidates?lat=37.59386307893983&lng=126.97539452887065\": request timeout"
+time="2026-09-26T09:44:37+09:00" level=warning msg="Request Failed" error="Get \"http://localhost:8093/api/candidates?lat=37.58299727066538&lng=127.0022416610196\": request timeout"
+time="2026-09-26T09:44:37+09:00" level=warning msg="Request Failed" error="Get \"http://localhost:8093/api/candidates?lat=37.57404319215647&lng=126.97192439844511\": request timeout"
+time="2026-09-26T09:44:38+09:00" level=warning msg="Request Failed" error="Get \"http://localhost:8093/api/candidates?lat=37.491677817652125&lng=127.02793944355506\": request timeout"
+time="2026-09-26T09:44:38+09:00" level=warning msg="Request Failed" error="Get \"http://localhost:8093/api/candidates?lat=37.51881683343147&lng=127.07146208350798\": request timeout"
+time="2026-09-26T09:44:42+09:00" level=warning msg="Request Failed" error="Get \"http://localhost:8093/api/candidates?lat=37.57265327712244&lng=126.93151234231915\": request timeout"
+time="2026-09-26T09:44:42+09:00" level=warning msg="Request Failed" error="Get \"http://localhost:8093/api/candidates?lat=37.498610331197526&lng=127.0644653159983\": request timeout"
+time="2026-09-26T09:44:44+09:00" level=warning msg="Request Failed" error="Get \"http://localhost:8093/api/candidates?lat=37.61242232245971&lng=127.06549833835525\": request timeout"
+time="2026-09-26T09:44:45+09:00" level=warning msg="Request Failed" error="Get \"http://localhost:8093/api/candidates?lat=37.504396911702635&lng=126.94821645872211\": request timeout"
+time="2026-09-26T09:44:45+09:00" level=warning msg="Request Failed" error="Get \"http://localhost:8093/api/candidates?lat=37.589199165996696&lng=127.00770901889366\": request timeout"
+time="2026-09-26T09:44:46+09:00" level=warning msg="Request Failed" error="Get \"http://localhost:8093/api/candidates?lat=37.60709347676104&lng=127.06033163370044\": request timeout"
+time="2026-09-26T09:44:46+09:00" level=warning msg="Request Failed" error="Get \"http://localhost:8093/api/candidates?lat=37.54525278094598&lng=127.04840903168697\": request timeout"
+
+
+  █ TOTAL RESULTS 
+
+    checks_total.......: 3648   96.436941/s
+    checks_succeeded...: 98.41% 3590 out of 3648
+    checks_failed......: 1.58%  58 out of 3648
+
+    ✗ ok
+      ↳  98% — ✓ 1795 / ✗ 29
+    ✗ found
+      ↳  98% — ✓ 1795 / ✗ 29
+
+    HTTP
+    http_req_duration..............: avg=7.07s p(50)=7.9s  p(95)=8.96s p(99)=10s   max=10s  
+      { expected_response:true }...: avg=7.02s p(50)=7.89s p(95)=8.89s p(99)=9.07s max=9.99s
+    http_req_failed................: 1.58%  29 out of 1824
+    http_reqs......................: 1824   48.21847/s
+
+    EXECUTION
+    dropped_iterations.............: 4177   110.421354/s
+    iteration_duration.............: avg=7.07s p(50)=7.9s  p(95)=8.96s p(99)=10s   max=10s  
+    iterations.....................: 1824   48.21847/s
+    vus............................: 35     min=35         max=400
+    vus_max........................: 400    min=200        max=400
+
+    NETWORK
+    data_received..................: 2.2 MB 59 kB/s
+    data_sent......................: 235 kB 6.2 kB/s
+
+
+

@@ -4,6 +4,12 @@ server:
 spring:
   application:
     name: dispatch-engine
+  # 2단계 실험: GEO_STORE=mysql 일 때만 쓴다. 풀은 기본 10 이다.
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:33306/delivery?serverTimezone=UTC&characterEncoding=UTF-8&rewriteBatchedStatements=true}
+    username: ${DB_USERNAME:dev_user}
+    password: ${DB_PASSWORD:dev_password}
+    driver-class-name: com.mysql.cj.jdbc.Driver
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -43,6 +49,8 @@ delivery:
       topic: order.created
       concurrency: 3
   dispatch:
+    # redis | mysql. 2단계 실험 스위치 — 가까운 라이더를 GEOSEARCH 로 찾을지 MySQL 공간 인덱스로 찾을지
+    geo-store: ${GEO_STORE:redis}
     # 후보 검색 반경. 넓히면 후보는 늘지만 GEOSEARCH 비용도 같이 오른다.
     search-radius-meters: 3000
     # GEOSEARCH 로 몇 명까지 훑을지. 10명만 뽑으면 배달 중인 사람이 걸러진 뒤 남는 게 없다.

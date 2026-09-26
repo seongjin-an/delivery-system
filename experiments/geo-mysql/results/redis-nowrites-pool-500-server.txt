@@ -1,0 +1,3 @@
+candidate_nearby_search_seconds{application="dispatch-engine",store="redis",quantile="0.5"} 8.02816E-4
+candidate_nearby_search_seconds{application="dispatch-engine",store="redis",quantile="0.95"} 0.020955136
+candidate_nearby_search_seconds{application="dispatch-engine",store="redis",quantile="0.99"} 0.096452608
