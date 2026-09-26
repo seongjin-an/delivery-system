@@ -7,6 +7,9 @@ dependencies {
     implementation(project(":common"))
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-data-redis")
+    // 레디스 커넥션 풀(spring.data.redis.lettuce.pool)을 켜려면 있어야 한다. 스타터에 안 딸려와서
+    // 풀만 켜두면 기동 때 GenericObjectPoolConfig NoClassDefFoundError 로 죽는다(geo-indexer 에서 겪었다).
+    implementation("org.apache.commons:commons-pool2")
     implementation("org.springframework.kafka:spring-kafka")
     implementation("org.springframework.boot:spring-boot-starter-amqp")
     implementation("org.springframework.boot:spring-boot-starter-actuator")

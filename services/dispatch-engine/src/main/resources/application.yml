@@ -8,6 +8,17 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6380}
+      # CandidateFinder 가 상태 30개를 파이프라인으로 읽는다. 파이프라인은 공유 연결을 못 쓰고 전용 연결을
+      # 따로 잡는데, 풀이 없으면 그 전용 연결을 검색마다 새로 열고 닫는다. 재보니 검색 100번에 연결이 102개 생겼다.
+      # 닫힌 연결은 TIME_WAIT 로 포트를 한동안 쥐고 있어서, 검색 초당 1000건에서 로컬 포트가 바닥났다
+      # (Can't assign requested address, 요청 절반 실패). 풀을 켜면 검색 100번에 새 연결 3개였고 실패는 0 이었다.
+      # 일반 명령은 풀을 켜도 계속 공유 연결 하나로 간다. 풀은 파이프라인과 트랜잭션만 쓴다.
+      lettuce:
+        pool:
+          enabled: true
+          max-active: 16
+          # 풀이 다 차면 기본값은 끝없이 기다린다. 배차가 멈추는 것보다 예외가 나는 게 낫다
+          max-wait: 500ms
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9094}
     consumer:
