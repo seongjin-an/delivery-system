@@ -1,5 +1,8 @@
 package com.delivery.dispatchengine;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import com.delivery.common.dispatch.ExperimentTimers;
 import com.delivery.common.Times;
 import com.delivery.common.dispatch.CandidateList;
 import com.delivery.common.dispatch.DispatchEventPublisher;
@@ -35,6 +38,14 @@ public class DispatchService {
 
     private static final Logger log = LoggerFactory.getLogger(DispatchService.class);
 
+    private Timer dispatchTimer;
+
+    /** 2단계 실험: 배차 상태 저장소(레디스 / MySQL)를 같은 자리에서 잰다. 테스트에선 안 불려서 타이머 없이 돈다 */
+    @org.springframework.beans.factory.annotation.Autowired
+    void experimentTimers(MeterRegistry registry) {
+        this.dispatchTimer = ExperimentTimers.slo(registry, "dispatch_duration");
+    }
+
     private final DispatchLease dispatchLease;
     private final OfferBoard offerBoard;
     private final CandidateList candidateList;
@@ -47,6 +58,14 @@ public class DispatchService {
     private String instanceId;
 
     public void dispatch(OrderCreated order) {
+        if (dispatchTimer == null) {
+            dispatchMeasured(order);
+            return;
+        }
+        dispatchTimer.record(() -> dispatchMeasured(order));
+    }
+
+    private void dispatchMeasured(OrderCreated order) {
         long orderId = order.orderId();
         long now = Times.now().toEpochMilli();
         String owner = instanceId + ":" + now;

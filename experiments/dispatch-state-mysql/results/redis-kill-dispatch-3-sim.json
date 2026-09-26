@@ -1,0 +1,1 @@
+{"success":true,"data":{"running":false,"elapsedSec":60,"riders":2000,"onlineRiders":0,"locationsSentPerSec":0,"locationsSent":39047,"ordersCreated":1201,"offersReceived":4249,"accepted":452,"rejected":174,"ignored":3623,"pickedUp":330,"delivered":330,"unknownRider":0,"failures":{"accept:UNREACHABLE":122,"reject:UNREACHABLE":42}},"message":null}

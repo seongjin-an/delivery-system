@@ -1,0 +1,3 @@
+start 10:47:31 store=redis rate=50 kill=none
+아직 배차 전이거나 배차 중 247 건, 30초 더 10:49:41
+end 10:50:11

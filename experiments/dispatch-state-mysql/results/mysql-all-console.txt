@@ -1,0 +1,49 @@
+[0;32m[OK][0m    빌드 완료
+[0;32m[OK][0m    전체 기동 완료
+start 11:03:52 store=mysql rate=20 kill=none
+end 11:06:02
+DELIVERED	545	1.21
+FAILED	650	4.69
+ASSIGNED	1	1.00
+dispatch_duration: 1196건, 평균 166.9ms  p50≈93.9ms  p95≈525.8ms  p99≈911.6ms
+relay_duration: 3867건, 평균 26.6ms  p50≈13.2ms  p95≈105.2ms  p99≈385.5ms
+offer_accept_duration: 546건, 평균 142.3ms  p50≈130.4ms  p95≈440.8ms  p99≈496.3ms
+offer_reject_duration: 158건, 평균 82.9ms  p50≈68.0ms  p95≈263.0ms  p99≈452.6ms
+delivery-mysql 62.15% delivery-redis 21.89% 
+start 11:06:04 store=mysql rate=50 kill=none
+아직 배차 전이거나 배차 중 1275 건, 30초 더 11:08:14
+아직 배차 전이거나 배차 중 232 건, 30초 더 11:08:45
+end 11:09:15
+DELIVERED	688	1.22
+FAILED	2287	2.98
+ASSIGNED	25	1.20
+dispatch_duration: 3000건, 평균 88.8ms  p50≈47.3ms  p95≈393.8ms  p99≈642.9ms
+relay_duration: 7906건, 평균 19.4ms  p50≈10.3ms  p95≈65.7ms  p99≈192.0ms
+offer_accept_duration: 713건, 평균 95.1ms  p50≈81.0ms  p95≈342.7ms  p99≈468.5ms
+offer_reject_duration: 222건, 평균 69.4ms  p50≈50.8ms  p95≈197.0ms  p99≈433.4ms
+delivery-mysql 62.63% delivery-redis 21.15% 
+start 11:09:16 store=mysql rate=20 kill=dispatch
+kill -9 dispatch-engine 11:09:36
+dispatch-engine up 11:09:58
+end 11:11:38
+DELIVERED	316	1.99
+FAILED	875	4.07
+ASSIGNED	10	3.10
+dispatch_duration: 873건, 평균 36.9ms  p50≈36.9ms  p95≈85.2ms  p99≈128.4ms
+relay_duration: 18397건, 평균 22.9ms  p50≈11.7ms  p95≈76.3ms  p99≈308.7ms
+offer_accept_duration: 92건, 평균 480.1ms  p50≈68.3ms  p95≈3745.5ms  p99≈4749.1ms
+offer_reject_duration: 26건, 평균 922.1ms  p50≈42.5ms  p95≈4350.0ms  p99≈4870.0ms
+delivery-mysql 27.08% delivery-redis 10.25% 
+start 11:11:39 store=mysql rate=20 kill=redis
+kill -9 redis 11:12:02
+redis up 11:12:08
+end 11:13:53
+DELIVERED	696	1.25
+ASSIGNED	30	1.37
+FAILED	452	4.83
+dispatch_duration: 1181건, 평균 137.4ms  p50≈82.1ms  p95≈431.2ms  p99≈632.9ms
+relay_duration: 3326건, 평균 25.1ms  p50≈11.4ms  p95≈88.7ms  p99≈239.5ms
+offer_accept_duration: 726건, 평균 87.7ms  p50≈48.7ms  p95≈186.5ms  p99≈416.9ms
+offer_reject_duration: 229건, 평균 40.0ms  p50≈33.2ms  p95≈119.6ms  p99≈190.1ms
+delivery-mysql 56.30% delivery-redis 46.03% 
+ALL DONE mysql

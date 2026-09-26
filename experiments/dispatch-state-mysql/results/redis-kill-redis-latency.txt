@@ -1,0 +1,4 @@
+dispatch_duration: 1004건, 평균 123.1ms  p50≈62.5ms  p95≈383.7ms  p99≈489.4ms
+relay_duration: 2420건, 평균 23.4ms  p50≈7.7ms  p95≈90.4ms  p99≈197.2ms
+offer_accept_duration: 831건, 평균 70.3ms  p50≈39.8ms  p95≈198.8ms  p99≈443.8ms
+offer_reject_duration: 281건, 평균 35.0ms  p50≈27.5ms  p95≈99.0ms  p99≈178.4ms

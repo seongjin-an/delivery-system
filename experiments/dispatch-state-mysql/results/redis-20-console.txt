@@ -1,0 +1,9 @@
+start 10:45:02 store=redis rate=20 kill=none
+end 10:47:13
+DELIVERED	1070	1.51
+FAILED	131	4.96
+dispatch_duration: 1201건, 평균 80.5ms  p50≈67.7ms  p95≈198.8ms  p99≈436.8ms
+relay_duration: 2637건, 평균 19.2ms  p50≈8.5ms  p95≈86.0ms  p99≈174.0ms
+offer_accept_duration: 1070건, 평균 41.9ms  p50≈32.9ms  p95≈139.2ms  p99≈270.7ms
+offer_reject_duration: 374건, 평균 25.1ms  p50≈17.4ms  p95≈82.6ms  p99≈178.2ms
+delivery-mysql 27.35% delivery-redis 16.95% 

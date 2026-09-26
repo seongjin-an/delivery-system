@@ -1,0 +1,34 @@
+[0;32m[OK][0m    전체 기동 완료
+start 11:23:04 store=redis rate=20 kill=dispatch
+kill -9 dispatch-engine 11:23:24
+dispatch-engine up 11:23:54
+아직 배차 전이거나 배차 중 1 건, 30초 더 11:25:35
+아직 배차 전이거나 배차 중 1 건, 30초 더 11:26:05
+아직 배차 전이거나 배차 중 1 건, 30초 더 11:26:35
+아직 배차 전이거나 배차 중 1 건, 30초 더 11:27:05
+아직 배차 전이거나 배차 중 1 건, 30초 더 11:27:35
+아직 배차 전이거나 배차 중 1 건, 30초 더 11:28:06
+아직 배차 전이거나 배차 중 1 건, 30초 더 11:28:36
+아직 배차 전이거나 배차 중 1 건, 30초 더 11:29:06
+end 11:29:36
+DELIVERED	226	1.36
+FAILED	961	4.22
+ASSIGNED	13	4.00
+DISPATCHING	1	0.00
+dispatch_duration: 898건, 평균 44.8ms  p50≈40.2ms  p95≈97.8ms  p99≈174.3ms
+relay_duration: 6210건, 평균 24.1ms  p50≈8.5ms  p95≈94.7ms  p99≈409.1ms
+offer_accept_duration: 20건, 평균 3605.6ms  p50≈3875.0ms  p95>5s  p99>5s
+offer_reject_duration: 3건, 평균 3011.3ms  p50≈3500.0ms  p95>5s  p99>5s
+delivery-mysql 23.26% delivery-redis 22.39% 
+start 11:29:38 store=redis rate=20 kill=dispatch
+kill -9 dispatch-engine 11:29:58
+dispatch-engine up 11:30:19
+end 11:31:59
+DELIVERED	330	2.03
+FAILED	871	4.10
+dispatch_duration: 852건, 평균 26.2ms  p50≈27.2ms  p95≈58.2ms  p99≈91.6ms
+relay_duration: 10591건, 평균 19.8ms  p50≈8.2ms  p95≈74.1ms  p99≈335.3ms
+offer_accept_duration: 82건, 평균 253.2ms  p50≈73.2ms  p95≈1590.0ms  p99≈1918.0ms
+offer_reject_duration: 22건, 평균 197.0ms  p50≈28.6ms  p95≈983.3ms  p99≈1780.0ms
+delivery-mysql 10.82% delivery-redis 20.52% 
+REPEAT DONE redis

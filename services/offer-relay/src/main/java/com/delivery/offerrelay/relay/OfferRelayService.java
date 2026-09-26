@@ -1,5 +1,8 @@
 package com.delivery.offerrelay.relay;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import com.delivery.common.dispatch.ExperimentTimers;
 import com.delivery.common.Times;
 import com.delivery.common.dispatch.DispatchEventPublisher;
 import com.delivery.common.dispatch.DispatchLease;
@@ -38,6 +41,14 @@ public class OfferRelayService {
 
     private static final Logger log = LoggerFactory.getLogger(OfferRelayService.class);
 
+    private Timer relayTimer;
+
+    /** 2단계 실험: 배차 상태 저장소(레디스 / MySQL)를 같은 자리에서 잰다. 테스트에선 안 불려서 타이머 없이 돈다 */
+    @org.springframework.beans.factory.annotation.Autowired
+    void experimentTimers(MeterRegistry registry) {
+        this.relayTimer = ExperimentTimers.slo(registry, "relay_duration");
+    }
+
     private final DispatchLease dispatchLease;
     private final OfferBoard offerBoard;
     private final OfferSender offerSender;
@@ -49,6 +60,14 @@ public class OfferRelayService {
     private String instanceId;
 
     public void relay(DispatchOffer expired) {
+        if (relayTimer == null) {
+            relayMeasured(expired);
+            return;
+        }
+        relayTimer.record(() -> relayMeasured(expired));
+    }
+
+    private void relayMeasured(DispatchOffer expired) {
         long orderId = expired.orderId();
         long now = Times.now().toEpochMilli();
         String owner = instanceId + ":" + now;

@@ -1,0 +1,24 @@
+start 11:14:10 store=mysql rate=20 kill=dispatch
+kill -9 dispatch-engine 11:14:30
+dispatch-engine up 11:14:48
+end 11:16:28
+DELIVERED	360	2.13
+FAILED	841	4.10
+dispatch_duration: 811건, 평균 35.2ms  p50≈36.5ms  p95≈77.0ms  p99≈98.6ms
+relay_duration: 26085건, 평균 21.9ms  p50≈11.5ms  p95≈72.8ms  p99≈258.6ms
+offer_accept_duration: 110건, 평균 112.0ms  p50≈31.0ms  p95≈750.0ms  p99≈1725.0ms
+offer_reject_duration: 38건, 평균 262.1ms  p50≈28.2ms  p95≈2150.0ms  p99≈4430.0ms
+delivery-mysql 23.03% delivery-redis 9.79% 
+start 11:16:30 store=mysql rate=20 kill=dispatch
+kill -9 dispatch-engine 11:16:50
+dispatch-engine up 11:17:07
+end 11:18:47
+DELIVERED	365	1.90
+FAILED	833	4.15
+ASSIGNED	3	1.00
+dispatch_duration: 810건, 평균 37.3ms  p50≈36.7ms  p95≈86.9ms  p99≈100.0ms
+relay_duration: 30357건, 평균 21.0ms  p50≈11.3ms  p95≈68.3ms  p99≈222.4ms
+offer_accept_duration: 83건, 평균 172.4ms  p50≈38.4ms  p95≈981.2ms  p99≈1792.5ms
+offer_reject_duration: 30건, 평균 286.1ms  p50≈30.9ms  p95≈1833.3ms  p99≈4100.0ms
+delivery-mysql 9.62% delivery-redis 6.02% 
+REPEAT DONE mysql

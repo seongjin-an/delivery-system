@@ -1,5 +1,8 @@
 package com.delivery.dispatchengine.offer;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import com.delivery.common.dispatch.ExperimentTimers;
 import com.delivery.common.RabbitTopology;
 import com.delivery.common.Times;
 import com.delivery.common.dispatch.DispatchEventPublisher;
@@ -33,6 +36,23 @@ public class OfferResponseService {
 
     private static final Logger log = LoggerFactory.getLogger(OfferResponseService.class);
 
+    private Timer acceptTimer;
+    private com.delivery.common.dispatch.MysqlDispatchOutbox outbox;
+    private org.springframework.transaction.support.TransactionTemplate tx;
+    private Timer rejectTimer;
+
+    /** 2단계 실험: 배차 상태 저장소(레디스 / MySQL)를 같은 자리에서 잰다. 테스트에선 안 불려서 타이머 없이 돈다 */
+    @org.springframework.beans.factory.annotation.Autowired
+    void experimentTimers(MeterRegistry registry,
+                          org.springframework.beans.factory.ObjectProvider<com.delivery.common.dispatch.MysqlDispatchOutbox> outbox,
+                          org.springframework.beans.factory.ObjectProvider<org.springframework.transaction.support.TransactionTemplate> tx) {
+        // 2단계 실험: 배차 상태가 MySQL 이면 수락과 배차 확정 이벤트를 한 트랜잭션에 묶는다(MysqlDispatchOutbox 주석)
+        this.outbox = outbox.getIfAvailable();
+        this.tx = this.outbox == null ? null : tx.getIfAvailable();
+        this.acceptTimer = ExperimentTimers.slo(registry, "offer_accept_duration");
+        this.rejectTimer = ExperimentTimers.slo(registry, "offer_reject_duration");
+    }
+
     private final OfferBoard offerBoard;
     private final RiderState riderState;
     private final RiderLock riderLock;
@@ -50,7 +70,18 @@ public class OfferResponseService {
      * 찜도 풀려서, 배달 중인 사람에게 새 제안이 간다.
      */
     public Assignment accept(long offerId, long riderId) {
-        Settled settled = settle(offerId, riderId, OfferState.ACCEPTED);
+        return acceptTimer == null ? acceptMeasured(offerId, riderId) : acceptTimer.record(() -> acceptMeasured(offerId, riderId));
+    }
+
+    private Assignment acceptMeasured(long offerId, long riderId) {
+        boolean viaOutbox = outbox != null && tx != null;
+        Settled settled = viaOutbox
+                ? tx.execute(status -> {
+                    Settled s = settle(offerId, riderId, OfferState.ACCEPTED);
+                    outbox.recordAssigned(s.orderId(), riderId, offerId, s.attempt());
+                    return s;
+                })
+                : settle(offerId, riderId, OfferState.ACCEPTED);
 
         riderState.markDelivering(riderId, settled.orderId());
 
@@ -65,7 +96,9 @@ public class OfferResponseService {
             throw new BusinessException(ErrorCode.OFFER_EXPIRED, "주문이 취소됐어요");
         }
 
-        eventPublisher.publishAssigned(settled.orderId(), riderId, offerId, settled.attempt());
+        if (!viaOutbox) {
+            eventPublisher.publishAssigned(settled.orderId(), riderId, offerId, settled.attempt());
+        }
 
         log.info("배차 확정: orderId={} riderId={} offerId={} attempt={}",
                 settled.orderId(), riderId, offerId, settled.attempt());
@@ -83,6 +116,10 @@ public class OfferResponseService {
      * {@code offerId} 가 이미 바뀌어 있어서 펜싱 규칙(기능 정의서 3.9)에 걸려 버려진다.
      */
     public Rejection reject(long offerId, long riderId) {
+        return rejectTimer == null ? rejectMeasured(offerId, riderId) : rejectTimer.record(() -> rejectMeasured(offerId, riderId));
+    }
+
+    private Rejection rejectMeasured(long offerId, long riderId) {
         Settled settled = settle(offerId, riderId, OfferState.REJECTED);
 
         riderState.release(riderId, settled.orderId(), offerId);

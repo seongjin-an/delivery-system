@@ -6,6 +6,8 @@ import com.delivery.common.dispatch.DispatchLease;
 import com.delivery.common.dispatch.OfferBoard;
 import com.delivery.common.dispatch.OfferProperties;
 import com.delivery.common.dispatch.OfferSender;
+import com.delivery.common.dispatch.MysqlDispatchLease;
+import com.delivery.common.dispatch.MysqlOfferBoard;
 import com.delivery.common.dispatch.RiderLock;
 import com.delivery.common.dispatch.RiderState;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -14,6 +16,7 @@ import org.springframework.boot.autoconfigure.amqp.RabbitAutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration;
 import org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -48,7 +51,10 @@ import java.util.List;
  * <p>그래서 선택적 의존성을 건드리는 건 전부 안쪽 클래스로 내려보냈다.
  */
 @AutoConfiguration(after = {
-        RedisAutoConfiguration.class, RabbitAutoConfiguration.class, KafkaAutoConfiguration.class})
+        RedisAutoConfiguration.class, RabbitAutoConfiguration.class, KafkaAutoConfiguration.class},
+        // 2단계 실험: JdbcTemplate 빈을 보려면 그다음에 돌아야 한다. 이름으로 적는 건 jdbc 가 없는 서비스에서
+        // 클래스를 찾다가 죽지 않게 하려고다
+        afterName = "org.springframework.boot.autoconfigure.jdbc.JdbcTemplateAutoConfiguration")
 public class CommonDispatchAutoConfiguration {
 
     /** 레디스를 쓰는 서비스용 부품 */
@@ -102,6 +108,7 @@ public class CommonDispatchAutoConfiguration {
         @Bean
         @ConditionalOnBean(StringRedisTemplate.class)
         @ConditionalOnMissingBean
+        @ConditionalOnProperty(name = "delivery.dispatch-state.store", havingValue = "redis", matchIfMissing = true)
         OfferBoard offerBoard(StringRedisTemplate redis, OfferProperties properties) {
             return new OfferBoard(redis, RESPOND_OFFER, EXPIRE_OFFER, CANCEL_OFFER, properties);
         }
@@ -116,6 +123,7 @@ public class CommonDispatchAutoConfiguration {
         @Bean
         @ConditionalOnBean(StringRedisTemplate.class)
         @ConditionalOnMissingBean
+        @ConditionalOnProperty(name = "delivery.dispatch-state.store", havingValue = "redis", matchIfMissing = true)
         DispatchLease dispatchLease(StringRedisTemplate redis, OfferProperties properties) {
             return new DispatchLease(redis, RELEASE_LOCK, properties);
         }
@@ -132,6 +140,37 @@ public class CommonDispatchAutoConfiguration {
         @ConditionalOnMissingBean
         RiderState riderState(StringRedisTemplate redis) {
             return new RiderState(redis, RELEASE_RIDER, FINISH_DELIVERY);
+        }
+    }
+
+    /**
+     * 2단계 실험: delivery.dispatch-state.store=mysql 이면 제안 현황판과 배차 리스를 MySQL order_dispatch 로 둔다.
+     *
+     * <p>jdbc 클래스는 전부 이 안에서만 쓴다. 바깥 클래스에 걸면 jdbc 가 없는 서비스(offer-relay 등 main 기준)에서
+     * 자동설정 클래스를 읽다가 NoClassDefFoundError 로 죽는다(location-ingest 에서 RedisScript 로 겪은 그거다).
+     */
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass(name = "org.springframework.jdbc.core.JdbcTemplate")
+    @ConditionalOnProperty(name = "delivery.dispatch-state.store", havingValue = "mysql")
+    @EnableConfigurationProperties(OfferProperties.class)
+    static class MysqlParts {
+
+        @Bean
+        OfferBoard offerBoard(org.springframework.jdbc.core.JdbcTemplate jdbc,
+                              org.springframework.transaction.PlatformTransactionManager txManager,
+                              OfferProperties properties) {
+            return new MysqlOfferBoard(jdbc,
+                    new org.springframework.transaction.support.TransactionTemplate(txManager), properties);
+        }
+
+        @Bean
+        DispatchLease dispatchLease(org.springframework.jdbc.core.JdbcTemplate jdbc, OfferProperties properties) {
+            return new MysqlDispatchLease(jdbc, properties);
+        }
+
+        @Bean
+        com.delivery.common.dispatch.MysqlDispatchOutbox mysqlDispatchOutbox(org.springframework.jdbc.core.JdbcTemplate jdbc) {
+            return new com.delivery.common.dispatch.MysqlDispatchOutbox(jdbc);
         }
     }
 

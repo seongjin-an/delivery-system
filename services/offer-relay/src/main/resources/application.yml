@@ -4,6 +4,12 @@ server:
 spring:
   application:
     name: offer-relay
+  # 2단계 실험: DISPATCH_STATE_STORE=mysql 일 때만 쓴다
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:33306/delivery?serverTimezone=UTC&characterEncoding=UTF-8}
+    username: ${DB_USERNAME:dev_user}
+    password: ${DB_PASSWORD:dev_password}
+    driver-class-name: com.mysql.cj.jdbc.Driver
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -45,6 +51,9 @@ spring:
       observation-enabled: true
 
 delivery:
+  dispatch-state:
+    # redis | mysql. 2단계 실험 스위치 — 제안 현황판과 배차 리스를 어디에 둘지. 세 서비스가 같은 값이어야 한다
+    store: ${DISPATCH_STATE_STORE:redis}
   relay:
     # 이 횟수까지 제안했는데 아무도 안 받으면 dispatch.failed 로 넘긴다.
     # 10초짜리 제안이 다섯 번이면 50초다. 손님이 앱을 보고 있는데 1분 넘게 "배차 중" 이면

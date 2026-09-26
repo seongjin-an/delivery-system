@@ -1,0 +1,4 @@
+start 11:11:39 store=mysql rate=20 kill=redis
+kill -9 redis 11:12:02
+redis up 11:12:08
+end 11:13:53

@@ -1,0 +1,4 @@
+start 10:56:37 store=redis rate=20 kill=redis
+kill -9 redis 10:57:00
+redis up 10:57:05
+end 10:58:51

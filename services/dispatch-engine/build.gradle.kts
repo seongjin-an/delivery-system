@@ -12,6 +12,9 @@ dependencies {
     implementation("org.apache.commons:commons-pool2")
     implementation("org.springframework.kafka:spring-kafka")
     implementation("org.springframework.boot:spring-boot-starter-amqp")
+    // 2단계 실험: 배차 상태를 MySQL 로 옮겨본다 (DISPATCH_STATE_STORE=mysql)
+    implementation("org.springframework.boot:spring-boot-starter-jdbc")
+    runtimeOnly("com.mysql:mysql-connector-j")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("io.micrometer:micrometer-registry-prometheus")
 

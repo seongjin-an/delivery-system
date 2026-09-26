@@ -9,6 +9,9 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-amqp")
     implementation("org.springframework.boot:spring-boot-starter-data-redis")
     implementation("org.springframework.kafka:spring-kafka")                     // 후보 소진 시 dispatch.failed 발행
+    // 2단계 실험: 배차 상태를 MySQL 로 옮겨본다 (DISPATCH_STATE_STORE=mysql)
+    implementation("org.springframework.boot:spring-boot-starter-jdbc")
+    runtimeOnly("com.mysql:mysql-connector-j")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("io.micrometer:micrometer-registry-prometheus")
 

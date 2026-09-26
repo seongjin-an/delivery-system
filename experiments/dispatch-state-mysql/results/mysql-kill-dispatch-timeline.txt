@@ -1,0 +1,4 @@
+start 11:09:16 store=mysql rate=20 kill=dispatch
+kill -9 dispatch-engine 11:09:36
+dispatch-engine up 11:09:58
+end 11:11:38

@@ -23,6 +23,9 @@ dependencies {
     compileOnly("org.springframework.kafka:spring-kafka")
     compileOnly("org.springframework.boot:spring-boot-starter-amqp")
     compileOnly("org.springframework.boot:spring-boot-starter-data-redis")
+    // 2단계 실험: 배차 상태를 MySQL 로 옮겨본다 (delivery.dispatch-state.store=mysql)
+    compileOnly("org.springframework.boot:spring-boot-starter-jdbc")
+    compileOnly("io.micrometer:micrometer-core")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     // compileOnly 는 테스트 클래스패스로 안 넘어온다. 자동설정이 실제로 켜지는지 보려면 여기서 다시 걸어줘야 한다.
@@ -30,4 +33,6 @@ dependencies {
     testImplementation("org.springframework.kafka:spring-kafka")
     testImplementation("org.springframework.boot:spring-boot-starter-amqp")
     testImplementation("org.springframework.boot:spring-boot-starter-data-redis")
+    testImplementation("org.springframework.boot:spring-boot-starter-jdbc")
+    testRuntimeOnly("com.mysql:mysql-connector-j")
 }
