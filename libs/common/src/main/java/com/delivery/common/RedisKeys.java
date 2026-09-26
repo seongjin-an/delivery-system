@@ -79,6 +79,15 @@ public final class RedisKeys {
     /** 푸시 API 전역 레이트리밋 토큰버킷 (시나리오 C) */
     public static final String PUSH_RATE_BUCKET = "rate:push";
 
+    /**
+     * 레디스 아웃박스. 수락 Lua 가 보드를 ACCEPTED 로 바꿀 때 내보낼 카프카 이벤트를 여기 같이 넣는다.
+     * dispatch-engine 의 DispatchOutboxRelay 가 꺼내서 보낸다. 2단계 실험에서 수락 뒤 카프카로 보내기 전에
+     * 죽어서 주문이 DISPATCHING 으로 남는 걸 실제로 봤다(kill -9 세 번에 좀비 2, 1, 0건).
+     */
+    public static final String DISPATCH_OUTBOX = "dispatch:outbox";
+    /** 꺼내서 보내는 중인 것. 보내다 죽으면 여기 남아 있다가 다시 보낸다 */
+    public static final String DISPATCH_OUTBOX_INFLIGHT = "dispatch:outbox:inflight";
+
     private RedisKeys() {
     }
 }

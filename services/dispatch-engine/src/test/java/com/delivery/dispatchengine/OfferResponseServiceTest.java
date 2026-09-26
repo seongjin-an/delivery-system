@@ -1,7 +1,10 @@
 package com.delivery.dispatchengine;
 
+import static org.mockito.ArgumentMatchers.anyList;
+import java.util.List;
+import com.delivery.common.dispatch.OutboxEnvelope;
+import com.delivery.common.KafkaTopics;
 import com.delivery.common.RabbitTopology;
-import com.delivery.common.dispatch.DispatchEventPublisher;
 import com.delivery.common.dispatch.OfferBoard;
 import com.delivery.common.dispatch.OfferDecision;
 import com.delivery.common.dispatch.OfferSnapshot;
@@ -46,7 +49,6 @@ class OfferResponseServiceTest {
     @Mock private OfferBoard offerBoard;
     @Mock private RiderState riderState;
     @Mock private RiderLock riderLock;
-    @Mock private DispatchEventPublisher eventPublisher;
     @Mock private RabbitTemplate rabbitTemplate;
 
     private OfferResponseService offerResponseService;
@@ -54,7 +56,7 @@ class OfferResponseServiceTest {
     @BeforeEach
     void setUp() {
         offerResponseService = new OfferResponseService(
-                offerBoard, riderState, riderLock, eventPublisher, rabbitTemplate);
+                offerBoard, riderState, riderLock, rabbitTemplate);
 
         given(offerBoard.findOrderId(OFFER_ID)).willReturn(ORDER_ID);
         given(offerBoard.read(ORDER_ID))
@@ -62,7 +64,7 @@ class OfferResponseServiceTest {
     }
 
     private void givenDecision(OfferState target, OfferDecision decision) {
-        given(offerBoard.respond(eq(ORDER_ID), eq(OFFER_ID), eq(RIDER_ID), eq(target), anyLong()))
+        given(offerBoard.respond(eq(ORDER_ID), eq(OFFER_ID), eq(RIDER_ID), eq(target), anyLong(), anyList()))
                 .willReturn(decision);
     }
 
@@ -76,7 +78,40 @@ class OfferResponseServiceTest {
 
         assertThat(assignment.orderId()).isEqualTo(ORDER_ID);
         assertThat(assignment.attempt()).isEqualTo(ATTEMPT);
-        verify(eventPublisher).publishAssigned(ORDER_ID, RIDER_ID, OFFER_ID, ATTEMPT);
+    }
+
+    /**
+     * 배차 확정 이벤트는 카프카로 바로 안 보내고 수락 Lua 에 같이 넘긴다. 그래야 ACCEPTED 와 이벤트가 갈라지지 않는다.
+     * 2단계 실험에서 바로 보내던 때 kill -9 한 번에 1~2건씩 주문이 DISPATCHING 으로 남았다.
+     */
+    @Test
+    void handsAssignedEventsToTheAcceptLuaInsteadOfSendingThem() {
+        givenDecision(OfferState.ACCEPTED, OfferDecision.APPLIED);
+
+        offerResponseService.accept(OFFER_ID, RIDER_ID);
+
+        List<String> events = eventsPassedToLua(OfferState.ACCEPTED);
+        assertThat(events).extracting(e -> OutboxEnvelope.fromJson(e).topic())
+                .containsExactly(KafkaTopics.DISPATCH_ASSIGNED, KafkaTopics.ORDER_STATUS);
+        assertThat(OutboxEnvelope.fromJson(events.get(0)).payload())
+                .contains("\"orderId\":" + ORDER_ID, "\"riderId\":" + RIDER_ID, "\"attempt\":" + ATTEMPT);
+    }
+
+    /** 거절은 이벤트가 없다. 재제안은 래빗엠큐 만료 큐로 넘긴다 */
+    @Test
+    void passesNoEventsWhenRejecting() {
+        givenDecision(OfferState.REJECTED, OfferDecision.APPLIED);
+
+        offerResponseService.reject(OFFER_ID, RIDER_ID);
+
+        assertThat(eventsPassedToLua(OfferState.REJECTED)).isEmpty();
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<String> eventsPassedToLua(OfferState target) {
+        ArgumentCaptor<List<String>> events = ArgumentCaptor.forClass(List.class);
+        verify(offerBoard).respond(eq(ORDER_ID), eq(OFFER_ID), eq(RIDER_ID), eq(target), anyLong(), events.capture());
+        return events.getValue();
     }
 
     @Test
@@ -129,7 +164,6 @@ class OfferResponseServiceTest {
                 .isInstanceOf(BusinessException.class);
 
         verify(riderState, never()).markDelivering(anyLong(), anyLong());
-        verify(eventPublisher, never()).publishAssigned(anyLong(), anyLong(), anyLong(), anyInt());
     }
 
     @Test
@@ -206,7 +240,7 @@ class OfferResponseServiceTest {
      * 여기서 다시 보고 풀지 않으면 취소된 주문 때문에 라이더가 영영 DELIVERING 으로 남는다.
      */
     @Test
-    void cancelledRightAfterAcceptReleasesRiderAndSendsNoAssignment() {
+    void cancelledRightAfterAcceptReleasesRider() {
         givenDecision(OfferState.ACCEPTED, OfferDecision.APPLIED);
         given(offerBoard.read(ORDER_ID)).willReturn(
                 new OfferSnapshot(OFFER_ID, RIDER_ID, OfferState.ACCEPTED, ATTEMPT, 0L),
@@ -218,6 +252,7 @@ class OfferResponseServiceTest {
 
         verify(riderState).finishDelivery(RIDER_ID, ORDER_ID);
         verify(riderLock).release(RIDER_ID, ORDER_ID);
-        verify(eventPublisher, never()).publishAssigned(anyLong(), anyLong(), anyLong(), anyInt());
+        // 배차 확정 이벤트는 수락 Lua 가 이미 아웃박스에 넣었다. 거둬들이지 않는다. order-api 는 CANCELLED 주문에 온
+        // 배차 확정을 무시한다(assign 이 CREATED, DISPATCHING 에서만 바꾼다).
     }
 }

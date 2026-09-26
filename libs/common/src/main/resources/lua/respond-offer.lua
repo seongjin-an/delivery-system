@@ -13,7 +13,9 @@
 -- 따로 두면 "offerId 를 riderId 보다 먼저 본다" 같은 규칙을 한쪽에만 고치는 날이 온다.
 --
 -- KEYS[1] = dispatch:offer:{orderId}
+-- KEYS[2] = dispatch:outbox (수락일 때 내보낼 이벤트를 넣는 리스트)
 -- ARGV[1] = offerId, ARGV[2] = riderId, ARGV[3] = 응답 시각(epoch ms), ARGV[4] = 쓸 상태
+-- ARGV[5..] = 확정됐을 때 KEYS[2] 에 넣을 이벤트(JSON). 거절이면 안 준다
 --
 -- 반환  1 = 확정했다
 --      -1 = 이미 수락된 제안이다        (409 ALREADY_TAKEN)
@@ -53,4 +55,12 @@ end
 -- respondedAt 은 수락이든 거절이든 "라이더가 답한 시각" 으로 같이 쓴다.
 -- 수락일 때만 acceptedAt 을 따로 두면 거절 응답시간을 잴 자리가 없어진다.
 redis.call('HSET', KEYS[1], 'state', ARGV[4], 'respondedAt', ARGV[3])
+
+-- 레디스 아웃박스. 상태를 바꾸는 이 스크립트 안에서 이벤트도 같이 넣어야 한다.
+-- 자바에서 ACCEPTED 를 쓴 뒤 카프카로 보내면, 그 사이에 죽었을 때 주문이 DISPATCHING 으로 영영 남는다.
+-- 2단계 실험에서 dispatch-engine 을 kill -9 로 세 번 죽였더니 실제로 2, 1, 0건 남았다.
+-- Lua 한 번은 통째로 돌거나 아예 안 도니까, 여기 넣으면 "상태는 바뀌었는데 이벤트가 없다" 가 안 생긴다.
+for i = 5, #ARGV do
+    redis.call('RPUSH', KEYS[2], ARGV[i])
+end
 return 1

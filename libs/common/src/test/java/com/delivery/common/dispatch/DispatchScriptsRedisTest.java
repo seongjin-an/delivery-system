@@ -1,5 +1,8 @@
 package com.delivery.common.dispatch;
 
+import org.springframework.data.redis.core.script.RedisScript;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.core.io.ClassPathResource;
 import com.delivery.common.Ids;
 import com.delivery.common.RedisKeys;
 import com.delivery.common.autoconfigure.CommonDispatchAutoConfiguration;
@@ -162,6 +165,70 @@ class DispatchScriptsRedisTest {
                 assertThat(context.getBean(OfferBoard.class)
                         .respond(orderId, offerId, riderId, OfferState.ACCEPTED, 5000L))
                         .isEqualTo(OfferDecision.EXPIRED));
+    }
+
+    // ── respond-offer.lua 의 레디스 아웃박스 ──────────────────────────────────
+    //
+    // 스크립트를 테스트 전용 리스트 키로 직접 부른다. 진짜 dispatch:outbox 에 넣으면 떠 있는 dispatch-engine 의
+    // 릴레이가 50ms 안에 꺼내가서, 들어갔는지 확인하기도 전에 사라질 수 있다.
+
+    private static RedisScript<Long> respondScript() {
+        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+        script.setLocation(new ClassPathResource("lua/respond-offer.lua"));
+        script.setResultType(Long.class);
+        return script;
+    }
+
+    private Long respondWithEvents(StringRedisTemplate redis, String outbox, long rider, String target, String... events) {
+        List<Object> args = new java.util.ArrayList<>(List.of(
+                Long.toString(offerId), Long.toString(rider), "5000", target));
+        args.addAll(List.of(events));
+        return redis.execute(respondScript(), List.of(RedisKeys.offer(orderId), outbox), args.toArray());
+    }
+
+    /** 수락이 이기면 같은 스크립트 안에서 이벤트가 순서대로 들어간다. 이게 "ACCEPTED 인데 이벤트가 없다" 를 막는다 */
+    @Test
+    void winningAcceptPushesItsEventsInOrder() {
+        withBoard(context -> {
+            StringRedisTemplate redis = context.getBean(StringRedisTemplate.class);
+            String outbox = "test:outbox:" + orderId;
+            try {
+                assertThat(respondWithEvents(redis, outbox, riderId, "ACCEPTED", "assigned", "status")).isEqualTo(1L);
+                assertThat(redis.opsForList().range(outbox, 0, -1)).containsExactly("assigned", "status");
+                assertThat(state(redis, orderId)).isEqualTo("ACCEPTED");
+            } finally {
+                redis.delete(outbox);
+            }
+        });
+    }
+
+    /** 진 쪽(두 번째 수락, 만료된 제안, 남의 제안)은 아무것도 안 넣는다. 넣으면 배차 확정이 두 번, 엉뚱한 라이더로 나간다 */
+    @Test
+    void losingAcceptsPushNothing() {
+        withBoard(context -> {
+            StringRedisTemplate redis = context.getBean(StringRedisTemplate.class);
+            String outbox = "test:outbox:" + orderId;
+            try {
+                respondWithEvents(redis, outbox, riderId, "ACCEPTED", "first");
+                assertThat(respondWithEvents(redis, outbox, riderId, "ACCEPTED", "second")).isEqualTo(-1L);
+                assertThat(respondWithEvents(redis, outbox, Ids.newId(), "ACCEPTED", "stranger")).isEqualTo(0L);
+                assertThat(redis.opsForList().range(outbox, 0, -1)).containsExactly("first");
+            } finally {
+                redis.delete(outbox);
+            }
+        });
+    }
+
+    @Test
+    void acceptOfExpiredOfferPushesNothing() {
+        withBoard(context -> {
+            StringRedisTemplate redis = context.getBean(StringRedisTemplate.class);
+            String outbox = "test:outbox:" + orderId;
+            context.getBean(OfferBoard.class).expire(orderId, offerId, 11000L);
+
+            assertThat(respondWithEvents(redis, outbox, riderId, "ACCEPTED", "late")).isEqualTo(-2L);
+            assertThat(redis.hasKey(outbox)).isFalse();
+        });
     }
 
     @Test
