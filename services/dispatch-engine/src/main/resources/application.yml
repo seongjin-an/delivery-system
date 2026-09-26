@@ -53,6 +53,14 @@ delivery:
     order-created:
       topic: order.created
       concurrency: 3
+  dispatch-outbox:
+    # 수락 Lua 가 넣은 배차 확정 이벤트를 이 간격으로 꺼내 보낸다. 수락 응답은 이걸 안 기다린다.
+    # 이만큼이 order-api 가 ASSIGNED 를 늦게 아는 최대치다(보내는 시간 빼고).
+    drain-interval: 50ms
+    # 보내다 죽어서 inflight 에 남은 걸 다시 보내기까지. 카프카 전송 한도(5초)보다 넉넉해야 한다.
+    # 짧으면 지금 보내는 중인 걸 다른 인스턴스가 또 보낸다(두 번 가도 order-api 가 걸러주긴 한다).
+    stuck-after: 30s
+    recover-interval: 10s
   dispatch:
     # 후보 검색 반경. 넓히면 후보는 늘지만 GEOSEARCH 비용도 같이 오른다.
     search-radius-meters: 3000

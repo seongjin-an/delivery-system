@@ -18,6 +18,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
+
 /**
  * DE-04 제안 수락, DE-05 제안 거절. 라이더가 제안에 답하는 두 가지 길.
  *
@@ -36,7 +38,6 @@ public class OfferResponseService {
     private final OfferBoard offerBoard;
     private final RiderState riderState;
     private final RiderLock riderLock;
-    private final DispatchEventPublisher eventPublisher;
     private final RabbitTemplate rabbitTemplate;
 
     /**
@@ -48,6 +49,11 @@ public class OfferResponseService {
      *
      * <p>그래서 순서가 중요하다. 상태 갱신이 실패한 채로 12초가 지나면 라이더는 IDLE 인데
      * 찜도 풀려서, 배달 중인 사람에게 새 제안이 간다.
+     *
+     * <p><b>배차 확정 이벤트는 여기서 안 보낸다.</b> 수락 Lua 가 ACCEPTED 를 쓰면서 레디스 아웃박스에 같이 넣고,
+     * DispatchOutboxRelay 가 따로 보낸다. 예전엔 여기서 카프카로 바로 보냈는데, ACCEPTED 를 쓰고 보내기 전에
+     * 죽으면 주문이 DISPATCHING 으로 영영 남았다(2단계 실험, kill -9 세 번에 2, 1, 0건).
+     * 덤으로 수락 응답이 카프카 ack 를 안 기다리게 됐다.
      */
     public Assignment accept(long offerId, long riderId) {
         Settled settled = settle(offerId, riderId, OfferState.ACCEPTED);
@@ -61,11 +67,11 @@ public class OfferResponseService {
         if (after != null && after.state() == OfferState.CANCELLED) {
             riderState.finishDelivery(riderId, settled.orderId());
             riderLock.release(riderId, settled.orderId());
+            // 배차 확정 이벤트는 수락 Lua 가 이미 아웃박스에 넣었다. order-api 는 CANCELLED 주문에 온 배차 확정을
+            // 무시한다(assign 이 CREATED, DISPATCHING 에서만 바꾼다). 그래서 거둬들이지 않는다.
             log.info("수락하는 사이 주문이 취소됐다: orderId={} riderId={} offerId={}", settled.orderId(), riderId, offerId);
             throw new BusinessException(ErrorCode.OFFER_EXPIRED, "주문이 취소됐어요");
         }
-
-        eventPublisher.publishAssigned(settled.orderId(), riderId, offerId, settled.attempt());
 
         log.info("배차 확정: orderId={} riderId={} offerId={} attempt={}",
                 settled.orderId(), riderId, offerId, settled.attempt());
@@ -104,8 +110,17 @@ public class OfferResponseService {
             throw new BusinessException(OfferDecision.EXPIRED.errorCode());
         }
 
+        // attempt 를 판정 전에 읽는다. 수락이면 아웃박스 이벤트에 실어야 해서다. 판정 전에 읽어도 되는 건
+        // Lua 가 offerId 를 확인하기 때문이다. 그 사이 다음 제안으로 넘어갔으면 Lua 가 지고, 이 값은 안 쓰인다.
+        // offerId 가 같으면 같은 제안이라 attempt 도 같다.
+        OfferSnapshot before = offerBoard.read(orderId);
+        int attempt = before != null && before.offerId() == offerId ? before.attempt() : 0;
+
+        List<String> events = target == OfferState.ACCEPTED
+                ? DispatchEventPublisher.assignedEvents(orderId, riderId, offerId, attempt)
+                : List.of();
         OfferDecision decision =
-                offerBoard.respond(orderId, offerId, riderId, target, Times.now().toEpochMilli());
+                offerBoard.respond(orderId, offerId, riderId, target, Times.now().toEpochMilli(), events);
         if (!decision.isApplied()) {
             log.info("응답 거부: offerId={} orderId={} riderId={} target={} 이유={}",
                     offerId, orderId, riderId, target, decision);
@@ -113,8 +128,7 @@ public class OfferResponseService {
         }
 
         // 여기부터는 이 요청이 판정에서 이긴 게 확정이다. 진 쪽은 이제 보드를 보고 물러난다.
-        OfferSnapshot snapshot = offerBoard.read(orderId);
-        return new Settled(orderId, snapshot == null ? 0 : snapshot.attempt());
+        return new Settled(orderId, attempt);
     }
 
     /**

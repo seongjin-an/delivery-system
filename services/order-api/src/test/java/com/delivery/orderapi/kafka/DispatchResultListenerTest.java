@@ -2,6 +2,7 @@ package com.delivery.orderapi.kafka;
 
 import com.delivery.common.KafkaTopics;
 import com.delivery.common.dispatch.DispatchEventPublisher;
+import com.delivery.common.dispatch.OutboxEnvelope;
 import com.delivery.orderapi.domain.DispatchResultService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -52,7 +53,7 @@ class DispatchResultListenerTest {
 
     @Test
     void readsAssignedAsPublished() {
-        publisher.publishAssigned(ORDER_ID, RIDER_ID, OFFER_ID, 2);
+        publishAssignedThroughOutbox();
 
         listener.onAssigned(sent(KafkaTopics.DISPATCH_ASSIGNED), ack);
 
@@ -91,12 +92,21 @@ class DispatchResultListenerTest {
     @Test
     void ignoresOtherStatusesOnOrderStatusButStillAcks() {
         // ASSIGNED 는 attempt 가 실린 dispatch.assigned 로 받는다. order.status 의 ASSIGNED 는 버린다.
-        publisher.publishAssigned(ORDER_ID, RIDER_ID, OFFER_ID, 2);
+        publishAssignedThroughOutbox();
 
         listener.onStatus(sent(KafkaTopics.ORDER_STATUS), ack);
 
         verify(service, never()).markDispatching(anyLong(), any());
         verify(ack).acknowledge();
+    }
+
+    /**
+     * 배차 확정은 dispatch-engine 이 레디스 아웃박스를 거쳐 보낸다. 수락 때 만든 봉투를 실제로 보내는 길
+     * (DispatchEventPublisher.send) 그대로 태워서, 아웃박스에 들어간 모양이 order-api 가 읽는 모양과 같은지 본다.
+     */
+    private void publishAssignedThroughOutbox() {
+        DispatchEventPublisher.assignedEvents(ORDER_ID, RIDER_ID, OFFER_ID, 2)
+                .forEach(json -> publisher.send(OutboxEnvelope.fromJson(json)));
     }
 
     /** 발행한 페이로드 중 해당 토픽으로 나간 걸 꺼낸다 */

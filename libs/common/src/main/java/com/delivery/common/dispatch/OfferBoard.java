@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -120,11 +121,25 @@ public class OfferBoard {
      */
     public OfferDecision respond(long orderId, long offerId, long riderId,
                                  OfferState target, long respondedAt) {
+        return respond(orderId, offerId, riderId, target, respondedAt, List.of());
+    }
+
+    /**
+     * @param events 확정되면 레디스 아웃박스({@link RedisKeys#DISPATCH_OUTBOX})에 같이 넣을 이벤트.
+     *               판정에서 지면 안 들어간다. 판정과 같은 Lua 안에서 넣어야 둘이 갈라지지 않는다
+     */
+    public OfferDecision respond(long orderId, long offerId, long riderId,
+                                 OfferState target, long respondedAt, List<String> events) {
+        List<String> args = new ArrayList<>(4 + events.size());
+        args.add(Long.toString(offerId));
+        args.add(Long.toString(riderId));
+        args.add(Long.toString(respondedAt));
+        args.add(target.name());
+        args.addAll(events);
         Long returned = redis.execute(
                 respondOfferScript,
-                List.of(RedisKeys.offer(orderId)),
-                Long.toString(offerId), Long.toString(riderId),
-                Long.toString(respondedAt), target.name());
+                List.of(RedisKeys.offer(orderId), RedisKeys.DISPATCH_OUTBOX),
+                args.toArray());
         return OfferDecision.of(returned);
     }
 

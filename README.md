@@ -232,6 +232,8 @@ STOP_INFRA=true ./scripts/stop.sh   # 전부 종료
 | `dispatch:offer:{orderId}` | Hash | 진행 중 제안 상태 |
 | `dispatch:offer:by-id:{offerId}` | String | `offerId` → `orderId` 역인덱스 |
 | `lock:dispatch:{orderId}` | String | `SET NX PX` 배차 락 |
+| `dispatch:outbox` | List | 레디스 아웃박스. 수락 Lua 가 ACCEPTED 를 쓰면서 배차 확정 이벤트를 같이 넣는다 |
+| `dispatch:outbox:inflight` | List | 꺼내서 카프카로 보내는 중인 것. 보내다 죽으면 여기 남았다가 다시 나간다 |
 | `lock:rider:{riderId}` | String | 라이더 중복 제안 방지 |
 | `lock:sweep:offline` | String | 오프라인 정리를 한 번에 한 대만 돌리는 락. 값은 잡은 인스턴스 |
 | `idem:order:{key}` | String | 주문 멱등키 |

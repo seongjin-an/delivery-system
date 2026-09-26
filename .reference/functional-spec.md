@@ -593,6 +593,10 @@ score = 거리km - 대기보너스
 Lua 스크립트 한 번으로 판정한다. 읽고 비교하고 쓰는 걸 따로 하면 만료 처리와 겹칠 때
 나중 쓰기가 이겨서 응답과 상태가 어긋난다.
 
+**이긴 수락은 같은 Lua 안에서 배차 확정 이벤트를 `dispatch:outbox` 리스트에 넣는다(레디스 아웃박스).**
+ACCEPTED 를 쓴 뒤 자바에서 카프카로 보내면, 그 사이에 죽었을 때 이벤트가 끝내 안 나가서 주문이 DISPATCHING 으로 남는다.
+2단계 실험에서 kill -9 세 번에 2, 1, 0건 났다.
+
 | Lua 반환 | HTTP | 라이더에게 보일 말 |
 |---|---|---|
 | `1` | 200 | 배차 완료 |
@@ -605,7 +609,9 @@ Lua 스크립트 한 번으로 판정한다. 읽고 비교하고 쓰는 걸 따�
 1. `HSET rider:state:{riderId} status DELIVERING currentOrderId {orderId}`
 2. `lock:rider` 는 **풀지 않는다.** 배달 완료(OR-04)까지 유지한다.
    락 TTL 12초가 지나면 그때부터는 `status = DELIVERING` 이 라이더를 지킨다.
-3. `dispatch.assigned` 와 `order.status` 를 발행한다.
+3. `dispatch.assigned` 와 `order.status` 는 수락 요청이 보내지 않는다. dispatch-engine 의 릴레이가 `dispatch:outbox` 에서
+   꺼내 보낸다. 보내다 죽으면 `dispatch:outbox:inflight` 에 남았다가 30초 뒤 다시 나간다. 두 번 갈 수 있고,
+   order-api 는 CREATED, DISPATCHING 일 때만 ASSIGNED 로 바꿔서 두 번째를 무시한다.
 
 **완료 조건**
 
