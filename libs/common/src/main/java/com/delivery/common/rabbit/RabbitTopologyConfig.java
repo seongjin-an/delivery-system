@@ -18,8 +18,9 @@ import org.springframework.context.annotation.Configuration;
 /**
  * 래빗엠큐 토폴로지 선언. 기능 정의서 RE-01.
  *
- * <p><b>이게 래빗엠큐를 쓰는 이유 전부다.</b> "특정 한 명에게, 10초 안에, 안 받으면 다음 사람" 을
- * 카프카로는 만들 수 없다.
+ * <p><b>"10초 안에, 안 받으면 다음 사람" 이 여기서는 큐 선언으로 끝난다.</b> 카프카로도 만들 수는 있지만
+ * (2단계 실험, .reference/tech-choice.md 3절) 그땐 타이머 컨슈머를 직접 짜서 들고 있어야 하고,
+ * 그게 kill -9 로 죽으면 다른 쪽이 이어받기까지(session.timeout.ms) 45초 동안 만료가 멈춘다.
  *
  * <p>구조는 이렇다. {@code dispatch.x} 에 라우팅 키 {@code offer.created} 로 <b>한 번</b> 발행하면
  * 브로커가 큐 두 개로 복제해준다.
